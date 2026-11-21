@@ -3,8 +3,29 @@ from calendar import monthrange
 from collections import Counter, defaultdict
 from datetime import date, timedelta
 from math import sqrt
+from pathlib import Path
+from hashlib import sha256
+import json
+import os
+import re
 
-VERSION = '2026.11-demo.1'
+def load_a1_policy(path):
+    policy = json.loads(Path(path).read_text())
+    if (set(policy) != {'language','minimum_age','age_reference','eligible_statuses','excluded_statuses','accepted_proof_types'}
+        or policy['language'] not in ('Deutsch','Französisch')
+        or type(policy['minimum_age']) is not int or not 0 <= policy['minimum_age'] <= 100
+        or policy['age_reference'] not in ('report_date','entry_date')):
+        raise ValueError('Invalid A1 demo policy')
+    for key in ('eligible_statuses','excluded_statuses','accepted_proof_types'):
+        if not isinstance(policy[key],list) or not policy[key] or any(not isinstance(item,str) or not item.strip() for item in policy[key]):
+            raise ValueError(f'Invalid A1 policy list: {key}')
+    if set(policy['eligible_statuses']) & set(policy['excluded_statuses']):
+        raise ValueError('A1 status lists overlap')
+    return policy
+
+
+A1_POLICY = load_a1_policy(os.getenv('COCKPIT_A1_POLICY') or Path(__file__).with_name('a1-policy.json'))
+VERSION = '2026.11-demo.2+'+sha256(json.dumps(A1_POLICY,sort_keys=True).encode()).hexdigest()[:10]
 ELIGIBLE = {'VA','F-FL','B-FL','B-RSFL','B-SL'}
 OUT = {'N','N (Asylsuchende)','S'}
 LEVELS = {'A1','A2','B1','B2','C1','C2'}
@@ -56,30 +77,39 @@ def goal1(person, entry, asof, tables):
     qualifying = []
     uncertain = False
     for row in tables['language']:
-        if row.get('Sprache')!='Deutsch' or row.get('Sprachniveau') not in LEVELS:
+        if row.get('Sprache')!=A1_POLICY['language'] or row.get('Sprachniveau') not in LEVELS:
             continue
         kind = row.get('Art')
         note = (row.get('Bemerkungen') or '').casefold()
-        if kind=='Zertifizierung' and not any(word in note.split() for word in ('telc','fide')):
-            uncertain = True
-            continue
-        if kind not in ('Zertifizierung','Muttersprache','Beendigung Ausbildung','Beendigung obligatorische Schulzeit'):
+        if kind not in A1_POLICY['accepted_proof_types']:
             continue
         d = as_date(row.get('Datum Erreichung'))
+        if d and d>asof:
+            continue
+        if kind=='Zertifizierung' and not re.search(r'\b(?:telc|fide)\b',note):
+            uncertain = True
+            continue
         if d is None:
             uncertain = True
         elif d<=asof:
             qualifying.append((d,row['_line']))
-    official = sorted((as_date(r['Erreicht am']),r['_line']) for r in tables['official']
-                      if r.get('Art')=='Sprachniveau A1' and r.get('Erreicht am') and r['Erreicht am']<=asof.isoformat())
+    official = [(as_date(r.get('Erreicht am')),r['_line']) for r in tables['official']
+                if r.get('Art')=='Sprachniveau A1' and (not r.get('Erreicht am') or r['Erreicht am']<=asof.isoformat())]
+    dates = sorted({d for d,_ in official if d})
+    undated = any(d is None for d,_ in official)
     evidence = [('official',line) for _,line in official]
     if qualifying:
         d,line = min(qualifying)
-        return judgement(asof,deadline,d,evidence+[('language',line)],
-                         'proof' if official and official[0][0]==d else 'proof_difference')
-    if uncertain or official:
-        return result('review','verify_proof',deadline,evidence=evidence)
-    return judgement(asof,deadline,None,[],'missing_proof')
+        same = dates==[d] and not undated
+        answer = judgement(asof,deadline,d,evidence+[('language',line)],'proof' if same else 'proof_difference')
+    elif uncertain or official:
+        answer = result('review','verify_proof',deadline,evidence=evidence)
+    else:
+        answer = judgement(asof,deadline,None,[],'missing_proof')
+        if asof==deadline:
+            answer['state'] = 'risk'
+    return answer | {'scope':'scope_in','due':asof>=deadline,'official_dates':dates,'official_undated':undated,
+                     'proof_uncertain':uncertain}
 
 
 def goal2(tables, asof, start, end, synthetic=False):
@@ -134,6 +164,22 @@ def goal3(household, members, assistance, end, asof, synthetic):
                      candidate if cut<candidate<=end else None)
 
 
+def age_on(born, when):
+    if not born or not when or born>when:
+        return None
+    return when.year-born.year-((when.month,when.day)<(born.month,born.day))
+
+
+def a1_scope(status,born,start,end,active,entry,now):
+    reference = entry if A1_POLICY['age_reference']=='entry_date' else now
+    age = age_on(born,reference)
+    if status in A1_POLICY['excluded_statuses'] or (age is not None and age<A1_POLICY['minimum_age']) or (start and start>now) or (end and end<now):
+        return 'scope_out'
+    if status not in A1_POLICY['eligible_statuses'] or age is None or not start or (active and active!={status}):
+        return 'scope_review'
+    return 'scope_in'
+
+
 def evaluate(snapshot, rows):
     now = date.fromisoformat(snapshot['asof'])
     indexes = defaultdict(lambda:defaultdict(list))
@@ -161,19 +207,27 @@ def evaluate(snapshot, rows):
                 and r['Verfahrensstand Gültig ab']<=snapshot['asof']<= (r.get('Verfahrensstand Gültig bis') or '9999')}
         entries = {as_date(r.get('Ereignisdatum')) for r in tables['events'] if r.get('Asylgeschäftsart')=='Aufenthalt (Einreise)'}
         entry = next(iter(entries)) if len(entries)==1 else None
-        age = now.year-born.year-((now.month,now.day)<(born.month,born.day)) if born else None
+        age = age_on(born,now)
         if status in OUT or (age is not None and age<16) or (start and start>now) or (end and end<now):
-            language=employment=result('na','outside_scope')
+            employment=result('na','outside_scope')
         elif status not in ELIGIBLE or not born or not start or (active and active!={status}):
-            language=employment=result('review','scope_unknown')
+            employment=result('review','scope_unknown')
         else:
-            language = goal1(person,entry,now,tables) if entry and entry<=now else result('review','entry_unknown')
             employment = goal2(tables,now,start,end,snapshot['source']=='synthetic')
+        scope = a1_scope(status,born,start,end,active,entry,now)
+        if scope=='scope_out':
+            language = result('na','outside_scope') | {'scope':scope}
+        elif scope=='scope_review':
+            language = result('review','scope_unknown') | {'scope':scope}
+        elif not entry or entry>now:
+            language = result('review','entry_unknown') | {'scope':scope}
+        else:
+            language = goal1(person,entry,now,tables)
         if home not in houses:
             family = household[home]
             cutoff = as_date(next(iter(ends[home]))) if len(ends[home])==1 else None
             houses[home] = goal3(home,family['membership'],family['support'],cutoff,now,snapshot['source']=='synthetic')
-        financial = houses[home] if language['state']!='na' else result('na','outside_scope')
+        financial = houses[home] if employment['state']!='na' else result('na','outside_scope')
         gaps = []
         for z in tables['zemis']:
             a = z.get('Arbeitsbeginn')
@@ -183,6 +237,27 @@ def evaluate(snapshot, rows):
         cases.append(dict(id=pid,worker=person.get('Fallführung') or '–',home=home,entry=entry,age=age,
             status=status,school_years=person.get('Schuljahre vor Einreise'),goals=(language,employment,financial),tables=tables,gaps=gaps,end=end))
     return cases
+
+
+A1_TOTALS = ('people','scope_in','scope_out','scope_review','due_now','upcoming_due','due_unknown',
+             'a1_attainment','met','late','overdue','review')
+
+
+def a1_totals(cases):
+    totals = Counter()
+    for case in cases:
+        goal = case['goals'][0]
+        scope = goal['scope']
+        totals['people'] += 1
+        totals[scope] += 1
+        if scope=='scope_in':
+            totals[{True:'due_now',False:'upcoming_due',None:'due_unknown'}[goal.get('due')]] += 1
+        if goal['achieved']:
+            totals['a1_attainment'] += 1
+        metric = {'achieved':'met','late':'late','overdue':'overdue','review':'review'}.get(goal['state'])
+        if metric:
+            totals[metric] += 1
+    return [totals[key] for key in A1_TOTALS]
 
 
 def group_metrics(cases):

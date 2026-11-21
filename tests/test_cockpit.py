@@ -83,6 +83,20 @@ class SnapshotTests(TestCase):
         with ZipFile(BytesIO(xlsx.write(ui.export(0,snap,cases,'manager')))) as workbook:
             self.assertFalse(any(b'DEMO-00001' in workbook.read(name) for name in workbook.namelist()))
 
+    def test_a1_totals_reconcile_by_worker_and_entry_year(self):
+        snap, rows = data.get_snapshot(self.db,self.second)
+        cases = rules.evaluate(snap,rows)
+        for lang in range(3):
+            tabs = ui.export(lang,snap,cases,'judge')
+            _, total = tabs[ui.tr(lang,'control_totals')]
+            self.assertEqual(total[0],144)
+            self.assertEqual(total[0],sum(total[1:4]))
+            self.assertEqual(total[1],sum(total[4:7]))
+            self.assertEqual(total[7],sum(total[8:10]))
+            for key in ('worker','year'):
+                rows = tabs[ui.tr(lang,key)][1:]
+                self.assertEqual([sum(col) for col in zip(*(row[1:] for row in rows))],total)
+
     def test_local_import_household_coverage_conservative(self):
         with TemporaryDirectory() as directory:
             db=data.connect(Path(directory)/'data.sqlite')
@@ -134,6 +148,29 @@ class RulesTests(TestCase):
         self.assertEqual(absent['achieved'],date(2025,8,1))
         unknown = rules.goal3('fixture',members,[support|{'Unterstützung':'other'}],cutoff,cutoff,True)
         self.assertEqual(unknown['state'],'review')
+
+    def test_a1_deadline_and_undated_official_entry(self):
+        entry, deadline = date(2023,10,16),date(2026,10,16)
+        tables = {'language':[],'official':[]}
+        due = rules.goal1({},entry,deadline,tables)
+        self.assertEqual((due['state'],due['due']),('risk',True))
+        self.assertEqual(rules.goal1({},entry,date(2026,10,17),tables)['state'],'overdue')
+        tables['official'].append({'Art':'Sprachniveau A1','Erreicht am':None,'_line':2})
+        review = rules.goal1({},entry,deadline,tables)
+        self.assertEqual((review['state'],review['official_undated']),('review',True))
+        tables['language'].append({'Art':'Zertifizierung','Sprachniveau':'A1','Sprache':'Deutsch',
+                                   'Bemerkungen':'fide.','Datum Erreichung':'2026-10-16','_line':3})
+        computed = rules.goal1({},entry,deadline,tables)
+        self.assertEqual((computed['state'],computed['reason']),('achieved','proof_difference'))
+
+    def test_a1_age_and_status_boundaries(self):
+        now = date(2026,10,16)
+        start = date(2025,1,1)
+        args = start,None,set(),start,now
+        self.assertEqual(rules.a1_scope('VA',date(2010,10,16),*args),'scope_in')
+        self.assertEqual(rules.a1_scope('VA',date(2010,10,17),*args),'scope_out')
+        self.assertEqual(rules.a1_scope('VA+7',date(2010,10,16),*args),'scope_review')
+        self.assertEqual(rules.a1_scope('S',date(2010,10,16),*args),'scope_out')
 
     def test_literal_excel_cells(self):
         book = xlsx.write({'test':[['Code'],['=HYPERLINK("secret")'],['0004']]})

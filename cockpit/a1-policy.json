@@ -1,0 +1,8 @@
+{
+  "language": "Deutsch",
+  "minimum_age": 16,
+  "age_reference": "report_date",
+  "eligible_statuses": ["VA", "F-FL", "B-FL", "B-RSFL", "B-SL"],
+  "excluded_statuses": ["N", "N (Asylsuchende)", "S"],
+  "accepted_proof_types": ["Zertifizierung", "Muttersprache", "Beendigung Ausbildung", "Beendigung obligatorische Schulzeit"]
+}

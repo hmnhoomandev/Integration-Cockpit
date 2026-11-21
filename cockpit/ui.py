@@ -86,6 +86,24 @@ COPY = {
  'import_attempt':('Letzter Importversuch','Latest import attempt','Dernière tentative d’importation'),
  'row_number':('Excel-Zeilennummer','Excel row number','Numéro de ligne Excel'),
  'result':('Ergebnis','Outcome','Résultat'),
+ 'scope_in':('Im Geltungsbereich','In scope','Dans le périmètre'),
+ 'scope_out':('Ausserhalb des Geltungsbereichs','Out of scope','Hors périmètre'),
+ 'scope_review':('Geltungsbereich ungeklärt','Scope unconfirmed','Périmètre non confirmé'),
+ 'due_status':('Friststatus','Deadline status','Statut de l’échéance'),
+ 'due_now':('Frist erreicht','Due by report date','Délai atteint à la date du rapport'),
+ 'upcoming_due':('Frist ausstehend','Deadline upcoming','Échéance à venir'),
+ 'due_unknown':('Frist ungeklärt','Deadline unknown','Échéance inconnue'),
+ 'a1_attainment':('A1 erreicht','A1 attained','A1 atteint'),
+ 'entry_date':('Einreisedatum','Entry date','Date d’arrivée'),
+ 'report_date':('Stichtag','Report date','Date du rapport'),
+ 'scope':('Geltungsbereich','Scope','Périmètre'),
+ 'official_dates':('Offizieller Eintrag','Recorded achievement','Résultat officiel enregistré'),
+ 'undated_proof':('Eintrag ohne Datum','Record without date','Enregistrement sans date'),
+ 'uncertain_proof':('Nachweis ungeklärt','Proof needs review','Justificatif à vérifier'),
+ 'control_totals':('Kontrollsummen A1','A1 control totals','Totaux de contrôle A1'),
+ 'language_policy':('Nachweissprache','Proof language','Langue du justificatif'),
+ 'age_reference':('Altersstichtag','Age reference','Date de référence pour l’âge'),
+ 'minimum_age':('Mindestalter','Minimum age','Âge minimum'),
  'missing_source':('Pflichtdatei fehlt','Required workbook is missing','Classeur obligatoire manquant'),
  'unrecognized_or_invalid_workbook':('Datei ungültig oder doppelt','Invalid or duplicate workbook','Classeur invalide ou en double'),
  'invalid_worksheet_data':('Ungültige Tabelleninhalte','Invalid worksheet content','Contenu de feuille invalide'),
@@ -114,7 +132,7 @@ COPY = {
  'heldout':('Testmonate','Held-out months','Mois de test'),
  'data_card':('Datendokumentation','Data card','Fiche de données'),
  'policy':('Regelversion und Annahmen','Rule version and assumptions','Version des règles et hypothèses'),
- 'assumptions':('Deutsch als Demosprache; Alter am Stichtag; Ausbildungsbeginn zählt; keine Zusammenrechnung paralleler Stellen; Unterstützungsabdeckung nur für synthetische Daten als vollständig behandelt.','German is the demo proof language; age is measured on the report date; enrolment qualifies; concurrent jobs are evaluated separately; complete assistance coverage is assumed for synthetic data only.','L’allemand sert de langue de référence pour la démo. Âge à la date du rapport, début de formation retenu, emplois simultanés évalués séparément et couverture complète supposée pour les seules données synthétiques.'),
+ 'assumptions':('Ausbildungsbeginn zählt; keine Zusammenrechnung paralleler Stellen; Unterstützungsabdeckung nur für synthetische Daten als vollständig behandelt.','Enrolment qualifies; concurrent jobs are evaluated separately; complete assistance coverage is assumed for synthetic data only.','Début de formation retenu, emplois simultanés évalués séparément et couverture complète supposée pour les seules données synthétiques.'),
  'review_save':('Kategorie bestätigen','Confirm category','Confirmer la catégorie'),
  'pdf_review':('PDF lokal auswerten','Review PDF locally','Examiner le PDF localement'),
  'ocr_review':('OCR-Vorschlag. ZEMIS und Kategorie am Original prüfen.','OCR suggestion. Check ZEMIS and the category against the original.','Suggestion OCR. Vérifier le ZEMIS et la catégorie sur l’original.'),
@@ -271,6 +289,14 @@ def detail(lang,case):
     for key,g in zip(('a1','work','household'),case['goals']):
         ev = ', '.join(f'{esc(k)} #{line}' for k,line in g['evidence']) or '—'
         rows = [(tr(lang,'deadline'),g['deadline']),(tr(lang,'attained'),g['achieved']),(tr(lang,'scenario'),g['earliest'])]
+        if key=='a1':
+            official = ', '.join(map(str,g.get('official_dates',())))
+            if g.get('official_undated'):
+                official = (official+' · ' if official else '')+tr(lang,'undated_proof')
+            due_key = {True:'due_now',False:'upcoming_due',None:'due_unknown'}[g.get('due')]
+            due = tr(lang,due_key) if g['scope']=='scope_in' else None
+            rows.extend([(tr(lang,'scope'),tr(lang,g['scope'])),(tr(lang,'entry_date'),case['entry']),
+                         (tr(lang,'due_status'),due),(tr(lang,'official_dates'),official or None)])
         facts = ''.join(f'<dt>{esc(k)}</dt><dd>{esc(v)}</dd>' for k,v in rows)
         sections.append(f'<section class="panel"><h2>{text(lang,key)}</h2>{badge(lang,g["state"])}<p>{text(lang,g["reason"])}</p><dl>{facts}<dt>{text(lang,"evidence")}</dt><dd>{ev}</dd></dl></section>')
     timeline = []
@@ -316,7 +342,7 @@ def reports(lang,snapshot,history,role,csrf,hosted,notice='',issues=(),manifest=
     return heading(lang,'reports')+feedback+f'''
 <section class="panel actions">{history_form}{import_controls}{report}</section>
 <div class="two"><section class="panel"><h2>{text(lang,'coverage')}</h2>{current}</section>
-<section class="panel"><h2>{text(lang,'policy')}</h2><p class="mono">{rules.VERSION}</p><p>{text(lang,'assumptions')}</p></section></div>'''
+<section class="panel"><h2>{text(lang,'policy')}</h2><p class="mono">{rules.VERSION}</p><p>{text(lang,'assumptions')}</p><p>{text(lang,'language_policy')} · {esc(rules.A1_POLICY['language'])}<br>{text(lang,'minimum_age')} · {rules.A1_POLICY['minimum_age']}<br>{text(lang,'age_reference')} · {text(lang,rules.A1_POLICY['age_reference'])}</p></section></div>'''
 
 
 def quality_export(lang,snapshot,diagnostic,issues,counts,manifest):
@@ -395,10 +421,17 @@ def export(lang,snapshot,cases,role):
     def details(index, selected):
         for case in selected:
             g = case['goals'][index]
-            yield [case['home'] if index==2 else case['id'],case['worker'] if index!=2 else None,
+            row = [case['home'] if index==2 else case['id'],case['worker'] if index!=2 else None,
                    case['entry'].year if case['entry'] and index!=2 else None,
                    g['deadline'],g['achieved'],tr(lang,g['reason']),
                    ', '.join(f'{dataset}:{line}' for dataset,line in g['evidence']),tr(lang,g['state'])]
+            if index==0:
+                due = {True:'due_now',False:'upcoming_due',None:'due_unknown'}[g.get('due')]
+                dates = ', '.join(map(str,g.get('official_dates',())))
+                row += [case['entry'],tr(lang,g['scope']),tr(lang,due) if g['scope']=='scope_in' else None,
+                        dates or None,tr(lang,'undated_proof') if g.get('official_undated') else None,
+                        tr(lang,'uncertain_proof') if g.get('proof_uncertain') else None]
+            yield row
     for i,key in enumerate(keys):
         selected = {c['home']:c for c in cases if c['goals'][i]['state']!='na'}.values() if i==2 else cases
         summary = rules.counts(cases,i)
@@ -407,6 +440,8 @@ def export(lang,snapshot,cases,role):
             if role!='manager' or (snapshot['source']=='synthetic' and number>=rules.MIN_GROUP)]
         if role!='manager':
             headers = ['ID',*[tr(lang,k) for k in ('worker','year','deadline','attained','reason','evidence')],tr(lang,'goals')]
+            if i==0:
+                headers.extend(tr(lang,k) for k in ('entry_date','scope','due_status','official_dates','undated_proof','uncertain_proof'))
             tabs[f'{i+1} · {tr(lang,"evidence")}'] = chain([headers],details(i,selected))
     if role!='manager':
         for field, label in (('worker','worker'),('entry','year')):
@@ -415,8 +450,9 @@ def export(lang,snapshot,cases,role):
                 v = case[field]
                 key = v.year if field=='entry' and v else v
                 groups.setdefault(str(key or '—'),[]).append(case)
-            tabs[tr(lang,label)] = [[tr(lang,label),tr(lang,'people'),tr(lang,'met')]] + [
-                [key,len(items),rules.counts(items,0)['achieved']] for key,items in sorted(groups.items())]
+            tabs[tr(lang,label)] = [[tr(lang,label),*(tr(lang,k) for k in rules.A1_TOTALS)]] + [
+                [key,*rules.a1_totals(items)] for key,items in sorted(groups.items())]
+        tabs[tr(lang,'control_totals')] = [[tr(lang,k) for k in rules.A1_TOTALS],rules.a1_totals(cases)]
         tabs['ZEMIS'] = [['ID',tr(lang,'evidence')]] + [[case['id'],','.join(map(str,case['gaps']))] for case in cases if case['gaps']]
     tabs[tr(lang,'coverage')] = coverage
     return tabs
