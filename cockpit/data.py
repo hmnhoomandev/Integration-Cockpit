@@ -103,11 +103,13 @@ class ImportFailure(Exception):
         self.errors = errors
 
 
-def connect(path):
+def connect(path,initialize=True):
     db = sqlite3.connect(path,timeout=30)
     db.row_factory = sqlite3.Row
+    db.execute("PRAGMA foreign_keys=ON")
+    if not initialize:
+        return db
     db.executescript("""
-      PRAGMA foreign_keys=ON;
       CREATE TABLE IF NOT EXISTS snapshots(
         id INTEGER PRIMARY KEY, asof TEXT NOT NULL, source TEXT NOT NULL, digest TEXT UNIQUE,
         created TEXT NOT NULL, inspected TEXT NOT NULL);
@@ -292,3 +294,8 @@ def backup(db, destination):
         os.link(temporary,destination)
     finally:
         os.unlink(temporary)
+
+
+def revoke_sessions(db):
+    with db:
+        return db.execute('DELETE FROM sessions').rowcount

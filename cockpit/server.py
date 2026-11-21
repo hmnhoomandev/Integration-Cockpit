@@ -1,6 +1,7 @@
 """Synthetic-only judge profile and local casework prototype."""
 from argparse import ArgumentParser
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
+from contextlib import closing
 from datetime import date
 from email.parser import BytesParser
 from email.policy import default
@@ -61,7 +62,26 @@ class App(ThreadingHTTPServer):
         self.attempts = defaultdict(list)
         self.attempt_lock = Lock()
         self.dummy = encode_password(secrets.token_hex(24))
+        self.model_lock = Lock()
+        self.models = OrderedDict()
+        with closing(data.connect(path)):
+            pass
         super().__init__(address,Handler)
+
+    def read_model(self,db,snapshot):
+        def load():
+            _, tables = data.get_snapshot(db,snapshot['id'])
+            return tables,rules.evaluate(snapshot,tables)
+        if snapshot['source']!='synthetic' or sum(json.loads(snapshot['inspected']).values())>30_000:
+            return load()
+        key = snapshot['id'],snapshot['digest']
+        with self.model_lock:
+            if key not in self.models:
+                self.models[key] = load()
+                if len(self.models)>3:
+                    self.models.popitem(last=False)
+            self.models.move_to_end(key)
+            return self.models[key]
 
     def allow_login(self, client):
         now = time.monotonic()
@@ -175,7 +195,7 @@ class Handler(BaseHTTPRequestHandler):
                                  [('Set-Cookie',self.cookie('locale',path.split('/')[-1],31536000))])
         self.view_path = self.path if not post else path
         self.demo_switch = False
-        db = data.connect(self.server.path)
+        db = data.connect(self.server.path,initialize=False)
         try:
             token = cookie_value('sid')
             if re.fullmatch(r'[A-Za-z0-9_-]{40,60}',token):
@@ -277,12 +297,14 @@ class Handler(BaseHTTPRequestHandler):
                     trend = self.monthly_trend(db,'manager','') if intent=='monthly_change' else ()
                     cases = ()
                     if intent!='monthly_change':
-                        _, approved_rows = data.get_snapshot(db,self.snapshot['id'])
-                        cases = rules.evaluate(self.snapshot,approved_rows)
+                        _,cases = self.server.read_model(db,self.snapshot)
                     aggregate = insights.gateway(insights.AggregateQuestion(intent),self.snapshot['asof'],cases,trend)
                 return self.page(route,ui.assistant(self.lang,topic,answer,aggregate,intent,asof))
-            _,tables = data.get_snapshot(db,self.snapshot['id'])
-            cases = rules.evaluate(self.snapshot,tables) if role!='importer' else []
+            if role=='importer':
+                _,tables = data.get_snapshot(db,self.snapshot['id'])
+                cases = []
+            else:
+                tables,cases = self.server.read_model(db,self.snapshot)
             if role=='worker':
                 cases = [c for c in cases if c['worker']==auth['assignment']]
             if route in ('overview','analysis-export'):
@@ -344,8 +366,10 @@ class Handler(BaseHTTPRequestHandler):
                           'GROUP BY asof ORDER BY asof',data.MONTHS).fetchall()
         trend = []
         for row in rows:
-            snapshot,tables = data.get_snapshot(db,row['id'])
-            cases = rules.evaluate(snapshot,tables)
+            snapshot = data.snapshot_metadata(db,row['id'],synthetic_only=True)
+            if snapshot is None:
+                continue
+            _,cases = self.server.read_model(db,snapshot)
             if role=='worker':
                 cases = [c for c in cases if c['worker']==assignment]
             metrics = rules.a1_totals(cases)
@@ -518,6 +542,7 @@ def main():
     bootstrap.add_argument('role',choices=('judge','worker','manager','importer'))
     bootstrap.add_argument('--assignment',default='')
     commands.add_parser('seed')
+    commands.add_parser('revoke-sessions')
     snapshot_backup = commands.add_parser('backup')
     snapshot_backup.add_argument('destination', type=Path)
     seeds = commands.add_parser('fixtures')
@@ -537,13 +562,15 @@ def main():
                 (directory/data.SCHEMA[key]['template']).write_bytes(blob)
         return
     path = Path(args.db)
-    if args.command=='backup' and not path.is_file():
+    if args.command in ('backup','revoke-sessions') and not path.is_file():
         parser.error('The source database does not exist')
     path.parent.mkdir(exist_ok=True,parents=True)
     db = data.connect(path)
     if args.command=='backup':
         data.backup(db,args.destination)
         print('Verified SQLite backup created')
+    elif args.command=='revoke-sessions':
+        print(f'Sessions revoked: {data.revoke_sessions(db)}')
     elif args.command=='account':
         account(db,args.username,os.getenv('COCKPIT_PASSWORD') or getpass(),args.role,args.assignment)
     elif args.command=='import':

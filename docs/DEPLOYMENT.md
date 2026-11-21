@@ -15,3 +15,13 @@ To rehearse the published link from another device, run the deployment smoke tes
 ```sh
 python3 -m cockpit.smoke https://listening-brian-served-upcoming.trycloudflare.com bern-jury
 ```
+
+## Revoke copied sessions on a restored instance
+
+Before exposing a restored database, explicitly invalidate the sessions copied from the backup. The command targets the configured database, so specify the restored path.
+
+```sh
+python3 -m cockpit.server --db /private/restored-cockpit.sqlite revoke-sessions
+```
+
+Use fresh authentication to verify both monthly snapshots and the latest Excel report. Keep the restore isolated until the acceptance checks pass.
