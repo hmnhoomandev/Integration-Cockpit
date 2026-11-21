@@ -1,0 +1,147 @@
+{
+  "events": {
+    "template": "Hackathon_Asylgesch_ftsdaten_Resultat.xlsx",
+    "headers": [
+      "Klient/-in Zemis-Nr.",
+      "Klientennummer",
+      "Asylgeschäftsart",
+      "Ereignisdatum",
+      "Erledigung",
+      "Erledigungscode",
+      "Erledigungsdatum"
+    ]
+  },
+  "status": {
+    "template": "Hackathon_Asylverfahrensstand_Resultat.xlsx",
+    "headers": [
+      "Zemis Nummer",
+      "Klientennummer",
+      "Dossier-Nr.",
+      "Verfahrensstand Gültig ab",
+      "Verfahrensstand Gültig bis",
+      "Verfahrensstand"
+    ]
+  },
+  "membership": {
+    "template": "Hackathon_Dossierperson_Resultat.xlsx",
+    "headers": [
+      "Dossier-Nr.",
+      "Klientennummer",
+      "Zemis Nummer",
+      "Dossierperson Von",
+      "Dossierperson Bis",
+      "Rolle",
+      "Beziehung"
+    ]
+  },
+  "work": {
+    "template": "Hackathon_Erwerb_Resultat.xlsx",
+    "headers": [
+      "Klient/-in Zemis-Nr.",
+      "Klientennummer",
+      "Von",
+      "Bis",
+      "Arbeitgeber Name",
+      "Arbeitgeber Ort",
+      "Pensum %",
+      "Erwerbsstatus",
+      "Monatseinkommen brutto CHF",
+      "Stundenlohn",
+      "Unregelmässiges Einkommen",
+      "Abtretung Sozialdienst",
+      "Bemerkungen"
+    ]
+  },
+  "support": {
+    "template": "Hackathon_Finanzielle_Unterst_tzung_Resultat.xlsx",
+    "headers": [
+      "Dossier-Nr.",
+      "Unterstützung",
+      "Finanzielle Unterstützung Gültig von",
+      "Finanzielle Unterstützung Gültig bis",
+      "Hauptgrund Beendigung Unterstützung"
+    ]
+  },
+  "education": {
+    "template": "Hackathon_Integrationsf_rderung_und_Ausbildung_Resultat.xlsx",
+    "headers": [
+      "Klient/-in Zemis-Nr.",
+      "Klientennummer",
+      "Start",
+      "Abschluss",
+      "Institution Name",
+      "Art",
+      "Bezeichnung",
+      "Stunden pro Woche",
+      "Bemerkungen"
+    ]
+  },
+  "official": {
+    "template": "Hackathon_Integrationszielerreichung_Resultat.xlsx",
+    "headers": [
+      "Klient/-in Zemis-Nr.",
+      "Art",
+      "Erreicht am",
+      "Partner",
+      "Jahr Grundgesamtheit",
+      "Ziel mit Status S erreicht"
+    ]
+  },
+  "clients": {
+    "template": "Hackathon_Klient_Resultat.xlsx",
+    "headers": [
+      "Dossier-Nr.",
+      "Unterstützung",
+      "Zemis Nummer",
+      "Klientennummer",
+      "Zuständigkeitsbeginn",
+      "Zuständigkeitsende",
+      "Datum Übergang Gemeindezuständigkeit",
+      "Verfahrensstand",
+      "Geschlecht",
+      "Nationalität Land",
+      "Muttersprache",
+      "Zivilstand",
+      "Jahre Arbeitserfahrung vor Einreise",
+      "Höchste abgeschlossene Ausbildung",
+      "Lateinisch alphabetisiert",
+      "Art Analphabetismus",
+      "Schuljahre vor Einreise",
+      "Fallführung",
+      "Geburtsdatum"
+    ]
+  },
+  "language": {
+    "template": "Hackathon_Sprachstand_Resultat.xlsx",
+    "headers": [
+      "Klient/-in Zemis-Nr.",
+      "Klientennummer",
+      "Sprache",
+      "Sprachniveau",
+      "Art",
+      "Bemerkungen",
+      "Datum Erreichung"
+    ]
+  },
+  "housing": {
+    "template": "Hackathon_Unterbringung_Resultat.xlsx",
+    "headers": [
+      "Klientennummer",
+      "Unterbringung Von",
+      "Unterbringung Bis",
+      "Unterbringung Art",
+      "PLZ",
+      "Ort"
+    ]
+  },
+  "zemis": {
+    "template": "Hackathon_ZEMIS_T_tigkeit_Resultat.xlsx",
+    "headers": [
+      "Zemis Nummer",
+      "Klientennummer",
+      "Arbeitsbeginn",
+      "Verpflichtet bis",
+      "Betrieb"
+    ]
+  }
+}
