@@ -101,6 +101,12 @@ class App(ThreadingHTTPServer):
 class Handler(BaseHTTPRequestHandler):
     server_version = 'Cockpit'
 
+    def client(self):
+        # Behind the bundled reverse proxy every request arrives from the proxy, so the
+        # sign-in limit uses the address the proxy appended last. Only trusted when enabled.
+        forwarded = self.headers.get('X-Forwarded-For','') if os.getenv('COCKPIT_BEHIND_PROXY')=='1' else ''
+        return forwarded.split(',')[-1].strip()[:64] or self.client_address[0]
+
     def log_message(self, *_):
         pass
 
@@ -397,7 +403,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.page('login',ui.login(self.lang,csrf),headers=[('Set-Cookie',self.cookie('login_csrf',csrf,600))])
         fields,_ = self.form(8192)
         valid_csrf = bool(csrf) and compare_digest(csrf.encode(),fields.get('csrf','').encode())
-        if valid_csrf and self.server.allow_login(self.client_address[0]):
+        if valid_csrf and self.server.allow_login(self.client()):
             username = fields.get('username','')[:80]
             password = fields.get('password','')
             row = db.execute('SELECT password FROM accounts WHERE username=?',(username,)).fetchone()

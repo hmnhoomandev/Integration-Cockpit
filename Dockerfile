@@ -1,7 +1,8 @@
 FROM python:3.13-slim
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 COCKPIT_DB=/tmp/cockpit.sqlite
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 COCKPIT_DB=/data/cockpit.sqlite
 RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils \
     && rm -rf /var/lib/apt/lists/*
+RUN mkdir /data && chown 65532:65532 /data
 WORKDIR /app
 COPY cockpit cockpit
 COPY static static

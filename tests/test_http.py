@@ -64,6 +64,28 @@ class HTTPTests(TestCase):
         self.assertEqual(status,200)
         return re.search(rb'name="csrf" value="([^"]+)"',body)[1].decode()
 
+    def test_sign_in_limit_is_per_forwarded_client_behind_proxy(self):
+        def attempt(forwarded):
+            connection = HTTPConnection('127.0.0.1',self.server.server_port,timeout=10)
+            connection.request('GET','/login',headers={'X-Forwarded-For':forwarded})
+            response = connection.getresponse()
+            cookie = [v for k,v in response.getheaders() if k.lower()=='set-cookie'][0].split(';')[0]
+            token = re.search(rb'name="csrf" value="([^"]+)"',response.read())[1].decode()
+            connection.close()
+            connection = HTTPConnection('127.0.0.1',self.server.server_port,timeout=10)
+            connection.request('POST','/login',urlencode({'csrf':token,'username':'judging','password':self.password}),
+                               {'Content-Type':'application/x-www-form-urlencoded','Cookie':cookie,'X-Forwarded-For':forwarded})
+            status = connection.getresponse().status
+            connection.close()
+            return status
+        os.environ['COCKPIT_BEHIND_PROXY'] = '1'
+        try:
+            self.assertEqual({attempt(f'198.51.100.{i}') for i in range(12)},{303})
+            self.assertEqual([attempt('203.0.113.9') for _ in range(9)][-1],401)
+        finally:
+            del os.environ['COCKPIT_BEHIND_PROXY']
+            self.server.attempts.clear()
+
     def test_login_form_survives_favicon_and_parallel_login_tab(self):
         _, body = self.request('/login')
         csrf = re.search(rb'name="csrf" value="([^"]+)"',body)[1].decode()

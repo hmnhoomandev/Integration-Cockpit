@@ -1,0 +1,36 @@
+# Public, synthetic-only cockpit behind Caddy (automatic HTTPS).
+# Usage on the server:  cd deploy && echo "DOMAIN=cockpit.example.ch" > .env && docker compose up -d --build
+services:
+  cockpit:
+    build: ..
+    restart: unless-stopped
+    environment:
+      COCKPIT_BEHIND_PROXY: "1"
+    volumes:
+      - cockpit-data:/data
+    # No published port: only Caddy can reach the application.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  caddy:
+    image: caddy:2.8.4
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - cockpit
+
+volumes:
+  cockpit-data:
+  caddy-data:
+  caddy-config:
