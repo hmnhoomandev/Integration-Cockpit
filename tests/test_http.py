@@ -64,6 +64,14 @@ class HTTPTests(TestCase):
         self.assertEqual(status,200)
         return re.search(rb'name="csrf" value="([^"]+)"',body)[1].decode()
 
+    def test_login_form_survives_favicon_and_parallel_login_tab(self):
+        _, body = self.request('/login')
+        csrf = re.search(rb'name="csrf" value="([^"]+)"',body)[1].decode()
+        self.assertEqual(self.request('/favicon.ico')[0],204)
+        self.assertEqual(self.request('/login')[0],200)
+        self.assertEqual(self.cookies['login_csrf'],csrf)
+        self.assertEqual(self.request('/login',{'csrf':csrf,'username':'judging','password':self.password})[0],303)
+
     def test_anonymous_role_isolation_and_logout(self):
         for path in ('/overview','/case/DEMO-00001','/export','/ai','/forecast','/intake'):
             self.assertEqual(self.request(path)[0],303)

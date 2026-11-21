@@ -148,6 +148,8 @@ class Handler(BaseHTTPRequestHandler):
         self.lang = ui.LOCALES.index(cookie_value('locale')) if cookie_value('locale') in ui.LOCALES else 0
         self.identity = self.snapshot = None
         self.csrf = ''
+        if not post and path=='/favicon.ico':
+            return self.respond(204)
         if not post and path=='/health':
             return self.respond(200,'ok','text/plain')
         if not post and path in ('/static/app.css','/static/bern.jpg'):
@@ -268,7 +270,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def signin(self,db,post,csrf):
         if not post:
-            csrf = secrets.token_urlsafe(32)
+            if not re.fullmatch(r'[A-Za-z0-9_-]{43}',csrf):
+                csrf = secrets.token_urlsafe(32)
             return self.page('login',ui.login(self.lang,csrf),headers=[('Set-Cookie',self.cookie('login_csrf',csrf,600))])
         fields,_ = self.form(8192)
         valid_csrf = bool(csrf) and compare_digest(csrf.encode(),fields.get('csrf','').encode())

@@ -25,3 +25,5 @@ One million rows have not been verified. Long imports should use the CLI.
 ## Browser
 
 Chrome exercised the HTTPS judge site at desktop and 390 px mobile widths. Verified anonymous redirects, successful login, DE/EN/FR switching, two synthetic snapshot replays, A1 before/after, Excel download, source citation, aggregate forecast, protected upload route and logout.
+
+The local Chrome run additionally uploaded all 11 synthetic XLSX files via the form, extracted a filled synthetic PDF, confirmed its proposed category without rendering a narrative canary, and verified aggregate CSV replacement and reset. The final regression suite passed 19 tests. A browser-discovered CSRF race from background favicon requests was fixed and regression-tested.
