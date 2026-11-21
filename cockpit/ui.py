@@ -79,6 +79,13 @@ COPY = {
  'choose':('Stichtag laden','Load report date','Charger la date de référence'),
  'uploaded':('Import abgeschlossen','Import complete','Import terminé'),
  'repeated':('Identischer Export bereits vorhanden','Identical export already present','Export identique déjà présent'),
+ 'quality_export':('Qualitätsbericht herunterladen','Download import quality report','Télécharger le rapport de qualité'),
+ 'invalid_demo':('Unvollständigen Testimport ausführen','Run incomplete test import','Tester un import incomplet'),
+ 'unexpected_column':('Zusätzliche Spalte ausserhalb des Schemas','Unexpected column outside the schema','Colonne supplémentaire hors schéma'),
+ 'fingerprint':('SHA-256 Prüfsumme','SHA-256 checksum','Empreinte SHA-256'),
+ 'import_attempt':('Letzter Importversuch','Latest import attempt','Dernière tentative d’importation'),
+ 'row_number':('Excel-Zeilennummer','Excel row number','Numéro de ligne Excel'),
+ 'result':('Ergebnis','Outcome','Résultat'),
  'missing_source':('Pflichtdatei fehlt','Required workbook is missing','Classeur obligatoire manquant'),
  'unrecognized_or_invalid_workbook':('Datei ungültig oder doppelt','Invalid or duplicate workbook','Classeur invalide ou en double'),
  'invalid_worksheet_data':('Ungültige Tabelleninhalte','Invalid worksheet content','Contenu de feuille invalide'),
@@ -279,13 +286,16 @@ def detail(lang,case):
 
 
 
-def reports(lang,snapshot,history,role,csrf,hosted,notice='',issues=()):
+def reports(lang,snapshot,history,role,csrf,hosted,notice='',issues=(),manifest=()):
     report = f'<a class="button" href="/export">{text(lang,"export")}</a>' if role!='importer' and snapshot else ''
     import_controls = ''
     if role in ('judge','importer'):
         button = action(lang,'synthetic_load')
         options = ''.join(f'<option>{d}</option>' for d in MONTHS)
         import_controls = post('/seed',csrf,f'<label>{text(lang,"snapshot")} <select name="date">{options}</select></label>{button}')
+        import_controls += post('/seed-invalid',csrf,
+            f'<label>{text(lang,"snapshot")} <select name="date">{options}</select></label>'+action(lang,'invalid_demo'))
+        report += f'<a class="button" href="/quality">{text(lang,"quality_export")}</a>'
         if not hosted:
             import_controls += post('/import',csrf,
                 f'<label>{text(lang,"snapshot")} <input name="date" type="date" required></label>'
@@ -295,6 +305,10 @@ def reports(lang,snapshot,history,role,csrf,hosted,notice='',issues=()):
         import json
         counts = json.loads(snapshot['inspected'])
         current = table([tr(lang,'source'),tr(lang,'rows')],((esc(k),esc(n)) for k,n in counts.items()))
+        if manifest:
+            records = table([tr(lang,'source'),tr(lang,'fingerprint')],
+                            ((esc(r['dataset']),'<code>'+esc(r['sha256'])+'</code>') for r in manifest))
+            current += f'<details><summary>{text(lang,"fingerprint")}</summary>{records}</details>'
     choices = ''.join(f'<option value="{r["id"]}">{esc(r["asof"])} · {text(lang,"demo" if r["source"]=="synthetic" else "local")}</option>' for r in history)
     history_form = post('/snapshot',csrf,f'<label>{text(lang,"snapshot")} <select name="id">{choices}</select></label>{action(lang,"choose")}') if choices else ''
     errors = ''.join(f'<li>{esc(k)} · #{i} · {text(lang,r)}</li>' for k,i,r in issues)
@@ -303,6 +317,21 @@ def reports(lang,snapshot,history,role,csrf,hosted,notice='',issues=()):
 <section class="panel actions">{history_form}{import_controls}{report}</section>
 <div class="two"><section class="panel"><h2>{text(lang,'coverage')}</h2>{current}</section>
 <section class="panel"><h2>{text(lang,'policy')}</h2><p class="mono">{rules.VERSION}</p><p>{text(lang,'assumptions')}</p></section></div>'''
+
+
+def quality_export(lang,snapshot,diagnostic,issues,counts,manifest):
+    status = {'accepted':'uploaded','repeated':'repeated','rejected':'rejected'}
+    hashes = {r['dataset']:r['sha256'] for r in manifest}
+    return {
+        'Import': [[tr(lang,'snapshot'),snapshot['asof'] if snapshot else None],
+                   [tr(lang,'source'),tr(lang,'demo' if snapshot['source']=='synthetic' else 'local') if snapshot else None],
+                   [tr(lang,'import_attempt'),diagnostic['report_date'] if diagnostic else None],
+                   [tr(lang,'result'),tr(lang,status[diagnostic['outcome']]) if diagnostic else None]],
+        'Sources': [[tr(lang,'source'),tr(lang,'rows'),tr(lang,'fingerprint')]] +
+                   [[k,n,hashes.get(k)] for k,n in counts.items()],
+        'Issues': [[tr(lang,'source'),tr(lang,'row_number'),tr(lang,'result'),'Code']] +
+                  [[key,line,tr(lang,reason),reason] for key,line,reason in issues],
+    }
 
 
 def assistant(lang,topic,result,aggregate):

@@ -68,6 +68,14 @@ def verify(base, username, password):
             require(archive.testzip() is None, 'Workbook ZIP integrity failed')
             details = archive.read('xl/worksheets/sheet3.xml')
             require(b'DEMO-00001' in details and b'2026-10-12' in details, 'Workbook evidence missing')
+        status, _, _ = request('/seed-invalid', {'csrf':form_token,'date':MONTHS[0]})
+        require(status==422, 'Incomplete import was not rejected')
+        require(request('/export')[2]==workbook, 'Rejected import changed the selected results')
+        status, _, quality = request('/quality')
+        require(status==200, 'Import quality workbook failed')
+        with ZipFile(BytesIO(quality)) as archive:
+            require(b'missing_source' in archive.read('xl/worksheets/sheet3.xml'), 'Missing source diagnosis absent')
+            require(b'SHA-256' in archive.read('xl/worksheets/sheet2.xml'), 'Source fingerprint column absent')
         require(request('/ai')[0] == 200, 'Rules assistant failed')
         require(request('/forecast')[0] == 200, 'Forecast failed')
     finally:
@@ -87,7 +95,7 @@ def main():
         or (url.scheme != 'https' and not (url.scheme == 'http' and url.hostname in ('127.0.0.1','localhost','::1')))):
         parser.error('Enter an HTTPS origin or a local HTTP origin without credentials or path')
     verify(args.url.rstrip('/'), args.username, getpass())
-    print('Verified health, sign-in, locales, monthly replay, A1 evidence, Excel, assistant, forecast, and sign-out.')
+    print('Verified health, sign-in, locales, monthly replay, rejected import, quality report, A1 evidence, Excel, assistant, forecast, and sign-out.')
 
 
 if __name__ == '__main__':

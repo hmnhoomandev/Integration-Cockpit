@@ -1,6 +1,7 @@
 """Synthetic-only judge profile and local casework prototype."""
 from argparse import ArgumentParser
 from collections import defaultdict
+from datetime import date
 from email.parser import BytesParser
 from email.policy import default
 from getpass import getpass
@@ -181,16 +182,16 @@ class Handler(BaseHTTPRequestHandler):
             if path in ('/','/login') and not post:
                 return self.redirect('/reports' if role=='importer' else '/overview')
             allowed = {
-              'judge':{'overview','queue','case','reports','export','ai','forecast','forecast-upload','forecast-reset','intake','intake-save','seed','snapshot','import','logout'},
+              'judge':{'overview','queue','case','reports','export','ai','forecast','forecast-upload','forecast-reset','intake','intake-save','seed','seed-invalid','quality','snapshot','import','logout'},
               'worker':{'overview','queue','case','reports','export','ai','intake','intake-save','snapshot','logout'},
               'manager':{'overview','reports','export','ai','forecast','forecast-upload','forecast-reset','snapshot','logout'},
-              'importer':{'reports','intake','intake-save','ai','seed','snapshot','import','logout'},
+              'importer':{'reports','intake','intake-save','ai','seed','seed-invalid','quality','snapshot','import','logout'},
             }
             route = path.split('/')[1]
             if route not in allowed[role] or (self.server.hosted and
                     (route in ('import','forecast-upload','forecast-reset','intake-save') or (route=='intake' and post))):
                 return self.page('no_access',ui.heading(self.lang,'no_access'),403)
-            mutations = {'logout','seed','snapshot','import','intake-save','forecast-upload','forecast-reset'}
+            mutations = {'logout','seed','seed-invalid','snapshot','import','intake-save','forecast-upload','forecast-reset'}
             if (route in mutations and not post) or (post and route not in mutations|{'intake'}):
                 return self.respond(405)
             query = {k:v[0] for k,v in parse_qs(url.query,max_num_fields=15).items()}
@@ -220,18 +221,16 @@ class Handler(BaseHTTPRequestHandler):
                                   (selected,self.server.hosted)).fetchone():
                         self.select(db,token,selected)
                     return self.redirect('/reports')
-                if route in ('import','seed'):
+                if route in ('import','seed','seed-invalid'):
                     return self.import_snapshot(db,route,token,fields,files)
-            if self.server.hosted:
-                selection = auth['selected'] or db.execute('SELECT id FROM snapshots WHERE source="synthetic" ORDER BY asof DESC LIMIT 1').fetchone()
-                selection = selection[0] if not isinstance(selection,int) and selection else selection
-                self.snapshot,tables = data.get_snapshot(db,selection) if selection else (None,{})
-                if self.snapshot and self.snapshot['source']!='synthetic':
-                    self.snapshot,tables = None,{}
-            else:
-                self.snapshot,tables = data.get_snapshot(db,auth['selected'])
-            if route=='reports':
-                return self.show_reports(db,query.get('notice',''))
+            if route in ('reports','quality'):
+                self.snapshot = data.snapshot_metadata(db,auth['selected'],self.server.hosted)
+                diagnostic = db.execute('SELECT * FROM import_diagnostics WHERE session=?',(digest(token),)).fetchone()
+                if route=='reports':
+                    return self.show_reports(db,diagnostic,query.get('notice',''))
+                return self.quality(db,diagnostic)
+            self.snapshot = data.snapshot_metadata(db,auth['selected'],self.server.hosted)
+            _,tables = data.get_snapshot(db,self.snapshot['id']) if self.snapshot else (None,{})
             if not self.snapshot:
                 return self.page(route,ui.heading(self.lang,'empty'),404)
             cases = rules.evaluate(self.snapshot,tables) if role!='importer' else []
@@ -297,30 +296,63 @@ class Handler(BaseHTTPRequestHandler):
         with db:
             db.execute('UPDATE sessions SET selected=? WHERE token=?',(selected,digest(token)))
 
-    def show_reports(self,db,notice='',issues=(),status=200):
+    def show_reports(self,db,diagnostic=None,notice='',status=200):
         history = db.execute('SELECT id,asof,source FROM snapshots WHERE (?=0 OR source="synthetic") ORDER BY asof DESC,id DESC',
                              (self.server.hosted,)).fetchall()
-        return self.page('reports',ui.reports(self.lang,self.snapshot,history,self.identity['role'],self.csrf,self.server.hosted,notice,issues),status)
+        issues = json.loads(diagnostic['issues']) if diagnostic else []
+        records = self.manifest(db) if self.identity['role'] in ('judge','importer') else []
+        if diagnostic and diagnostic['outcome']=='rejected':
+            notice = 'rejected'
+        return self.page('reports',ui.reports(self.lang,self.snapshot,history,self.identity['role'],self.csrf,self.server.hosted,
+                                              notice,issues,records),status)
+
+    def manifest(self,db):
+        if not self.snapshot:
+            return []
+        return db.execute('SELECT dataset,sha256 FROM source_manifest WHERE snapshot=? ORDER BY dataset',
+                          (self.snapshot['id'],)).fetchall()
+
+    def quality(self,db,diagnostic):
+        issues = json.loads(diagnostic['issues']) if diagnostic else []
+        counts = json.loads(self.snapshot['inspected']) if self.snapshot else {}
+        tabs = ui.quality_export(self.lang,self.snapshot,diagnostic,issues,counts,self.manifest(db))
+        return self.respond(200,xlsx.write(tabs),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                            [('Content-Disposition','attachment; filename="import-quality.xlsx"')])
 
     def import_snapshot(self,db,route,token,fields,files):
         report = fields.get('date','')
-        if route=='seed':
+        if route in ('seed','seed-invalid'):
             if report not in data.MONTHS:
                 raise ValueError('invalid_month')
-            inputs = data.seed(report).values()
+            books = data.seed(report)
+            if route=='seed-invalid':
+                del books['language']
+            inputs = books.values()
         else:
             inputs = [blob for name,blob in files if name=='workbooks']
-            if len(inputs)!=11:
-                raise ValueError('expected_11_workbooks')
+        status = 'accepted'
+        issues = []
+        valid_report = None
         try:
-            selected,repeated = data.load_files(db,inputs,report,'synthetic' if route=='seed' else 'local')
+            valid_report = date.fromisoformat(report).isoformat()
+            selected,repeated = data.load_files(db,inputs,valid_report,'synthetic' if route!='import' else 'local')
+            status = 'repeated' if repeated else 'accepted'
         except data.ImportFailure as exc:
-            with db:
+            status,issues = 'rejected',exc.errors
+        except ValueError:
+            status,issues = 'rejected',[('snapshot',0,'invalid_date')]
+        with db:
+            db.execute('INSERT INTO import_diagnostics VALUES(?,?,?,?) ON CONFLICT(session) DO UPDATE SET '
+                       'report_date=excluded.report_date,outcome=excluded.outcome,issues=excluded.issues',
+                       (digest(token),valid_report,status,json.dumps(issues)))
+            if status=='rejected':
                 db.execute('INSERT INTO audit VALUES(datetime("now"),?,?)',('snapshot_import','rejected'))
-            self.snapshot,_ = data.get_snapshot(db,self.identity['selected'])
-            return self.show_reports(db,'rejected',exc.errors,422)
+        if status=='rejected':
+            self.snapshot = data.snapshot_metadata(db,self.identity['selected'],self.server.hosted)
+            diagnostic = db.execute('SELECT * FROM import_diagnostics WHERE session=?',(digest(token),)).fetchone()
+            return self.show_reports(db,diagnostic,'rejected',422)
         self.select(db,token,selected)
-        return self.redirect('/reports?notice='+('repeated' if repeated else 'uploaded'))
+        return self.redirect('/reports?notice='+('repeated' if status=='repeated' else 'uploaded'))
 
     def intake(self,db,route,post,fields,files,tables,cases):
         lang = self.lang

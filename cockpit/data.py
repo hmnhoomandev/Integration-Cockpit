@@ -96,6 +96,12 @@ def connect(path):
       CREATE TABLE IF NOT EXISTS accounts(username TEXT PRIMARY KEY, password TEXT, role TEXT, assignment TEXT);
       CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, username TEXT REFERENCES accounts(username),
         csrf TEXT, expires INTEGER, selected INTEGER REFERENCES snapshots(id) ON DELETE SET NULL);
+      CREATE TABLE IF NOT EXISTS source_manifest(
+        snapshot INTEGER REFERENCES snapshots(id) ON DELETE CASCADE,
+        dataset TEXT, sha256 TEXT NOT NULL, PRIMARY KEY(snapshot,dataset));
+      CREATE TABLE IF NOT EXISTS import_diagnostics(
+        session TEXT PRIMARY KEY REFERENCES sessions(token) ON DELETE CASCADE,
+        report_date TEXT, outcome TEXT NOT NULL, issues TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS audit(at TEXT, action TEXT, outcome TEXT);
       CREATE TABLE IF NOT EXISTS forecast_input(
         username TEXT PRIMARY KEY REFERENCES accounts(username) ON DELETE CASCADE, series TEXT);
@@ -138,8 +144,13 @@ def load_files(db, files, asof, source):
         cursor = db.execute('INSERT OR IGNORE INTO snapshots(asof,source,digest,created,inspected) VALUES(?,?,?,?,?)',
                             (asof,source,digest,datetime.now(timezone.utc).isoformat(),'{}'))
         if cursor.rowcount == 0:
-            return db.execute('SELECT id FROM snapshots WHERE digest=?',(digest,)).fetchone()[0], True
-        snapshot = cursor.lastrowid
+            snapshot = db.execute('SELECT id FROM snapshots WHERE digest=?',(digest,)).fetchone()[0]
+        else:
+            snapshot = cursor.lastrowid
+        db.executemany('INSERT OR IGNORE INTO source_manifest VALUES(?,?,?)',
+                       ((snapshot,key,sha256(blob).hexdigest()) for key,(blob,_,_) in recognized.items()))
+        if cursor.rowcount == 0:
+            return snapshot, True
         for key in ['clients',*(k for k in SCHEMA if k!='clients')]:
             blob, header, mac = recognized[key]
             seen = set()
@@ -149,6 +160,9 @@ def load_files(db, files, asof, source):
                 if len(issues) >= 100:
                     break
                 if not any(x not in (None,'') for x in cells):
+                    continue
+                if any(value not in (None,'') for value in cells[len(header):]):
+                    issues.append((key,line,'unexpected_column'))
                     continue
                 row = dict(zip(header,(norm(value) for value in cells),strict=False))
                 try:
@@ -217,9 +231,15 @@ def read_data_rows(blob,key):
         raise ImportFailure([(key,line+1,'invalid_worksheet_data')]) from exc
 
 
+def snapshot_metadata(db, id=None, synthetic_only=False):
+    return db.execute(
+        'SELECT * FROM snapshots WHERE (? IS NULL OR id=?) AND (?=0 OR source="synthetic") '
+        'ORDER BY asof DESC,id DESC LIMIT 1',(id,id,synthetic_only)).fetchone()
+
+
+
 def get_snapshot(db, id=None):
-    row = db.execute('SELECT * FROM snapshots WHERE id=?',(id,)).fetchone() if id else db.execute(
-        'SELECT * FROM snapshots ORDER BY asof DESC,id DESC LIMIT 1').fetchone()
+    row = snapshot_metadata(db,id)
     if not row:
         return None, {}
     data = defaultdict(list)

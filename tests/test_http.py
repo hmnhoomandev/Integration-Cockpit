@@ -94,6 +94,33 @@ class HTTPTests(TestCase):
         self.assertEqual(self.request('/ai?topic=CANARY-SECRET')[0],400)
         self.assertEqual(self.request('/forecast')[0],200)
 
+    def test_quality_report_rejection_preserves_selected_month_and_is_session_scoped(self):
+        self.assertEqual(self.request('/quality')[0],303)
+        csrf = self.login('judging')
+        september, october = data.MONTHS
+        self.assertEqual(self.request('/seed',{'csrf':csrf,'date':september})[0],303)
+        expected = self.request('/export')[1]
+        status, html = self.request('/seed-invalid',{'csrf':csrf,'date':october})
+        self.assertEqual(status,422)
+        self.assertIn(b'language',html)
+        self.assertIn(b'2026-09-30',html)
+        self.assertEqual(self.request('/export')[1],expected)
+        status, report = self.request('/quality')
+        self.assertEqual(status,200)
+        with ZipFile(BytesIO(report)) as archive:
+            self.assertIn(b'missing_source',archive.read('xl/worksheets/sheet3.xml'))
+            self.assertIn(b'2026-09-30',archive.read('xl/worksheets/sheet1.xml'))
+            self.assertIn(b'2026-10-31',archive.read('xl/worksheets/sheet1.xml'))
+            self.assertIn(b'SHA-256',archive.read('xl/worksheets/sheet2.xml'))
+            self.assertFalse(any(b'DEMO-00001' in archive.read(name) for name in archive.namelist()))
+        self.cookies.clear()
+        self.login('manager')
+        self.assertEqual(self.request('/quality')[0],403)
+        self.cookies.clear()
+        self.login('judging')
+        with ZipFile(BytesIO(self.request('/quality')[1])) as archive:
+            self.assertNotIn(b'missing_source',archive.read('xl/worksheets/sheet3.xml'))
+
     def test_three_languages_and_monthly_reimport(self):
         csrf=self.login('judging')
         for language,word in [('de-CH','Übersicht'),('en','Overview'),('fr-CH','Vue d’ensemble')]:
