@@ -75,7 +75,7 @@ def suggest(blob, authorized_ids):
     normalized = text.casefold()
     suggestions = [gateway(IntakeQuestion(key))['category']
                    for key,phrases in PHRASES.items() if any(phrase in normalized for phrase in phrases)]
-    result = {'mode':'review','person':authorized_ids[match],'suggestions':suggestions}
+    result = {'mode':'review','person':authorized_ids[match],'suggestions':suggestions,'text':text}
     if extraction=='ocr':
         result['extraction'] = extraction
     return result

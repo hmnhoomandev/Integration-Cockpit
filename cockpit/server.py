@@ -21,7 +21,7 @@ import re
 import secrets
 import time
 
-from . import data, insights, intake, rules, ui, xlsx
+from . import ai, data, insights, intake, predict, redact, rules, ui, xlsx
 
 ROOT = Path(__file__).resolve().parents[1]
 TTL = 8*3600
@@ -64,6 +64,7 @@ class App(ThreadingHTTPServer):
         self.dummy = encode_password(secrets.token_hex(24))
         self.model_lock = Lock()
         self.models = OrderedDict()
+        self.ai_answers = {}
         with closing(data.connect(path)):
             pass
         super().__init__(address,Handler)
@@ -196,7 +197,7 @@ class Handler(BaseHTTPRequestHandler):
             view = '/'+values.get('view',[''])[0].lstrip('/')
             if view=='/case':
                 view='/queue'
-            routes = {'/login','/overview','/queue','/reports','/ai','/forecast','/intake','/help','/privacy'}
+            routes = {'/login','/overview','/queue','/reports','/ai','/forecast','/intake','/help','/privacy','/ai-analysis'}
             if view not in routes and not re.fullmatch(r'/case/[A-Za-z0-9._~%\-]{1,180}',view):
                 view = '/'
             filters = {key:values[key][0][:64] for key in ('q','state','page','goal','factor','topic','intent','asof') if key in values}
@@ -247,9 +248,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.snapshot = data.snapshot_metadata(db,auth['selected'],self.server.hosted)
                 return self.page(path[1:],ui.guide(self.lang,role) if path=='/help' else ui.privacy(self.lang))
             allowed = {
-              'judge':{'overview','queue','case','reports','export','ai','forecast','forecast-upload','forecast-reset','intake','intake-save','intake-demo','seed','seed-invalid','quality','snapshot','import','analysis-export','logout'},
+              'judge':{'overview','queue','case','reports','export','ai','ai-analysis','forecast','forecast-upload','forecast-reset','intake','intake-save','intake-demo','seed','seed-invalid','quality','snapshot','import','analysis-export','logout'},
               'worker':{'overview','queue','case','reports','export','ai','intake','intake-save','intake-demo','snapshot','analysis-export','logout'},
-              'manager':{'overview','reports','export','ai','forecast','forecast-upload','forecast-reset','snapshot','analysis-export','logout'},
+              'manager':{'overview','reports','export','ai','ai-analysis','forecast','forecast-upload','forecast-reset','snapshot','analysis-export','logout'},
               'importer':{'reports','intake','intake-save','intake-demo','ai','seed','seed-invalid','quality','snapshot','import','analysis-export','logout'},
             }
             route = path.split('/')[1]
@@ -319,8 +320,11 @@ class Handler(BaseHTTPRequestHandler):
                 cases = []
             else:
                 tables,cases = self.server.read_model(db,self.snapshot)
+            everyone = cases
             if role=='worker':
                 cases = [c for c in cases if c['worker']==auth['assignment']]
+            if route=='ai-analysis':
+                return self.ai_analysis(db,everyone,query)
             if route in ('overview','analysis-export'):
                 dimension = query.get('factor','year')
                 if dimension not in rules.FACTOR_DIMENSIONS:
@@ -348,13 +352,17 @@ class Handler(BaseHTTPRequestHandler):
                     return self.respond(200,xlsx.write(tabs),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                                         [('Content-Disposition','attachment; filename="safe-aggregates.xlsx"')])
                 trend = self.monthly_trend(db,role,auth['assignment']) if self.snapshot['source']=='synthetic' else ()
-                return self.page(route,ui.overview(self.lang,self.snapshot,cases,role=='manager',dimension,intake_categories,goal,trend))
+                return self.page(route,ui.overview(self.lang,self.snapshot,cases,role=='manager',dimension,intake_categories,goal,trend,role in ('judge','manager')))
             if route=='queue':
                 return self.page(route,ui.queue(self.lang,cases,query.get('q','')[:64],max(1,int(query.get('page','1'))),query.get('state',''),date.fromisoformat(self.snapshot['asof'])))
             if route=='case':
                 identifier = unquote(path.split('/')[-1])
                 case = next((c for c in cases if c['id']==identifier),None)
-                return self.page('case',ui.detail(self.lang,case,date.fromisoformat(self.snapshot['asof'])) if case else ui.heading(self.lang,'empty'),200 if case else 404)
+                if not case:
+                    return self.page('case',ui.heading(self.lang,'empty'),404)
+                model = predict.model_for(self.snapshot['id'],everyone,self.snapshot['asof'])
+                contact = ui.demo_contact(case) if self.snapshot['source']=='synthetic' else None
+                return self.page('case',ui.detail(self.lang,case,date.fromisoformat(self.snapshot['asof']),model.explain(case),contact))
             if route=='export':
                 blob = xlsx.write(ui.export(self.lang,self.snapshot,cases,role))
                 return self.respond(200,blob,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -376,6 +384,21 @@ class Handler(BaseHTTPRequestHandler):
             return self.page('review',ui.heading(self.lang,'review'),400)
         finally:
             db.close()
+
+    def ai_analysis(self,db,cases,query):
+        asof = date.fromisoformat(self.snapshot['asof'])
+        key = (self.snapshot['id'],self.lang)
+        if query.get('refresh') or key not in self.server.ai_answers:
+            model = predict.model_for(self.snapshot['id'],cases,self.snapshot['asof'])
+            material = ui.analysis_material(cases,asof,model)
+            instruction = ('Write five short observations and three concrete recommendations for the management of the asylum '
+                           'social service, based only on these aggregate figures. Use plain sentences, one per line, no markdown.')
+            answer,report = ai.ask(self.lang,instruction,material)
+            with db:
+                db.execute('INSERT INTO audit VALUES(datetime("now"),?,?)',('ai_analysis',report['state']))
+            self.server.ai_answers[key] = (answer,report)
+        answer,report = self.server.ai_answers[key]
+        return self.page('ai-analysis',ui.ai_analysis_page(self.lang,answer,report,ui.local_analysis(self.lang,cases,asof)))
 
     def monthly_trend(self,db,role,assignment):
         rows = db.execute('SELECT MAX(id) AS id FROM snapshots WHERE source="synthetic" AND asof IN (?,?) '
@@ -517,6 +540,14 @@ class Handler(BaseHTTPRequestHandler):
                 options = ''.join(f'<option value="{key}" {"selected" if key in result["suggestions"] else ""}>{text(lang,key)}</option>'
                                   for key in insights.CATEGORIES)
                 extraction = f'<p>{text(lang,"ocr_review")}</p>' if result.get('extraction')=='ocr' else ''
+                known = [r['Zemis Nummer'] for r in tables['clients']]+[r['_person'] for r in tables['clients']]
+                answer,report = ai.ask(lang,'Summarise this masked intake form in three sentences and name the main obstacle to a '
+                                       'language course (childcare scheduling, prior schooling, course participation or housing). '
+                                       'No markdown.',result['text'],known)
+                with db:
+                    db.execute('INSERT INTO audit VALUES(datetime("now"),?,?)',('intake_ai',report['state']))
+                local = [text(lang,'reviewed_intake')+' · '+', '.join(text(lang,k) for k in result['suggestions'])] if result['suggestions'] else [text(lang,'manual')]
+                extraction += ui.shield_panel(lang,report)+f'<section class="panel ai-panel">{ui.ai_answer(lang,answer,report,local)}</section>'
                 feedback = extraction + ui.post('/intake-save',self.csrf,f'<p>{esc(result["person"])}</p>'
                     f'<input type="hidden" name="person" value="{esc(result["person"])}">'
                     f'<label>{text(lang,"category")} <select name="category">{options}</select></label>'+ui.action(lang,'review_save')+ui.tip(lang,'help_review_save'))

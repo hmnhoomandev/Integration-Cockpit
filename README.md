@@ -39,8 +39,22 @@ Every button has a yellow **!** next to it that explains what it does. **Hilfe**
 | Level 2 · Group analysis | Entry year, age, schooling, mother tongue, course timing and confirmed intake categories. Rates come with 95 % ranges, and groups under eight people are hidden |
 | Casework | Weekly list, traffic lights per goal, one next step per case, and the source rows behind every result |
 | Extras | Payment estimate, 2027 rule comparison, ZEMIS check, arrivals forecast, local intake-PDF review, and a rules assistant with cited sources |
+| AI | A per-person A1 forecast from a logistic regression trained locally on completed cases (cross-validated AUC 0.78; nationality, mother tongue and gender excluded), with the factors that move it, a what-if and similar cases. A privacy shield masks names, birth dates, AHV, ZEMIS and client numbers, addresses, phone, email and IBAN before any text reaches a language model, and blocks the request if anything is still recognisable. Optional Claude analysis of aggregate figures and masked intake forms |
+| Contact | Call and email links on every case, with templates in German, English and French. Demo contact details are invented; the eleven exports contain none |
 
 The interface is in German, English and French. The demo data are invented. Some associations in the data were planted on purpose so the analysis has something to show; [docs/SOURCES.md](docs/SOURCES.md) lists them.
+
+## Switching on the language model
+
+The AI forecast and the privacy shield always run locally. The Claude analysis is off by default. To switch it on, only on a machine where the operator has approved it:
+
+```sh
+python3 -m pip install anthropic
+export ANTHROPIC_API_KEY=…   # or use `ant auth login`
+COCKPIT_AI=claude python3 -m cockpit.server serve --demo
+```
+
+Only masked text or aggregate figures are sent. Each request is logged as an event without content.
 
 ## Roles
 

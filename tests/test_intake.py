@@ -41,6 +41,8 @@ class IntakeTests(TestCase):
     def test_filled_pdf_and_private_narrative(self):
         payload = pdf(['ZEMIS: SYN-Z00001','childcare scheduling','CANARY-PRIVATE-NARRATIVE'])
         result = suggest(payload,{'SYN-Z00001':'DEMO-00001'})
+        # The text is returned in memory only, so the privacy shield can mask it before any AI request.
+        self.assertIn('CANARY-PRIVATE-NARRATIVE',result.pop('text'))
         self.assertEqual(result,{'mode':'review','person':'DEMO-00001','suggestions':['scheduling']})
         self.assertEqual(suggest(payload,{})['mode'],'manual')
         self.assertEqual(suggest(pdf([]),{'SYN-Z00001':'DEMO-00001'})['mode'],'manual')

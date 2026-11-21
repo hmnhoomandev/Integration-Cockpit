@@ -667,6 +667,128 @@ COPY.update({
             'Démo publique : personnes inventées uniquement. Le dépôt de vrais fichiers y est bloqué.'),
 })
 
+COPY.update({
+ 'ai_badge':('KI · lokal','AI · local','IA · locale'),
+ 'ai-analysis':('KI-Analyse','AI analysis','Analyse IA'),
+ 'help_ai-analysis':('Auswertung durch KI aus Summen, mit Schutzschild: Sie sehen genau, was gesendet wird.','AI evaluation from totals, with privacy shield: you see exactly what is sent.','Évaluation IA à partir de totaux, avec bouclier : vous voyez exactement ce qui est envoyé.'),
+ 'pred_title':('KI-Prognose · Sprache A1','AI forecast · Language A1','Prévision IA · Langue A1'),
+ 'pred_lead':('Wahrscheinlichkeit, A1 fristgerecht zu erreichen, wenn alles so weiterläuft wie bisher.',
+              'Chance of reaching A1 on time if things continue as they are.',
+              'Probabilité d’atteindre l’A1 dans les délais si rien ne change.'),
+ 'pred_base':('Durchschnitt aller abgeschlossenen Fälle: {rate}','Average of all completed cases: {rate}','Moyenne de tous les dossiers terminés : {rate}'),
+ 'pred_factors':('Was die Prognose am stärksten bewegt','What moves the forecast most','Ce qui influence le plus la prévision'),
+ 'pred_up':('erhöht','raises','augmente'),
+ 'pred_down':('senkt','lowers','diminue'),
+ 'pred_peers':('Von {n} ähnlichen Personen (gleiches Kursmuster, gleiche Altersgruppe) erreichten {k} A1 fristgerecht.',
+               'Of {n} similar people (same course pattern, same age group), {k} reached A1 on time.',
+               'Sur {n} personnes semblables (même parcours de cours, même tranche d’âge), {k} ont atteint l’A1 à temps.'),
+ 'scenario_course_now':('Wenn jetzt ein Sprachkurs startet (noch in den ersten 6 Monaten): {before} → {after}',
+                        'If a language course starts now (still within the first 6 months): {before} → {after}',
+                        'Si un cours de langue commence maintenant (encore dans les 6 premiers mois) : {before} → {after}'),
+ 'pred_model':('Logistische Regression, auf diesem Rechner trainiert mit {n} abgeschlossenen Fällen. Trefferqualität (AUC, Kreuzvalidierung) {auc}; Fehler {skill} kleiner als ein Schätzwert ohne Modell. Ohne Nationalität, Muttersprache und Geschlecht.',
+               'Logistic regression trained on this machine with {n} completed cases. Discrimination (AUC, cross-validated) {auc}; error {skill} lower than a guess without the model. Nationality, mother tongue and gender are not used.',
+               'Régression logistique entraînée sur cet ordinateur avec {n} dossiers terminés. Qualité (AUC, validation croisée) {auc} ; erreur inférieure de {skill} à une estimation sans modèle. Sans nationalité, langue maternelle ni sexe.'),
+ 'pred_caution':('Hilfe für das Gespräch, keine Entscheidung. Nie für Leistungen oder Sanktionen verwenden.',
+                 'Support for the conversation, not a decision. Never use it for benefits or sanctions.',
+                 'Aide pour l’entretien, pas une décision. Ne jamais l’utiliser pour des prestations ou des sanctions.'),
+ 'pred_none':('Die KI-Prognose erscheint nur für offene A1-Fälle (auf Kurs oder gefährdet).','The AI forecast appears only for open A1 cases (on track or at risk).',
+              'La prévision IA n’apparaît que pour les dossiers A1 ouverts (en bonne voie ou en danger).'),
+ 'f_course_early':('Sprachkurs in den ersten 6 Monaten','Language course in the first 6 months','Cours de langue dans les 6 premiers mois'),
+ 'f_course_early_no':('Kein Sprachkurs in den ersten 6 Monaten','No language course in the first 6 months','Pas de cours de langue dans les 6 premiers mois'),
+ 'f_course_late':('Sprachkurs erst nach 6 Monaten','Language course only after 6 months','Cours de langue seulement après 6 mois'),
+ 'f_course_late_no':('Kein später Sprachkurs','No late language course','Pas de cours tardif'),
+ 'f_school_years':('Schuljahre vor Einreise: {v}','School years before entry: {v}','Années d’école avant l’arrivée : {v}'),
+ 'f_age_at_entry':('Alter bei Einreise: {v}','Age at entry: {v}','Âge à l’arrivée : {v}'),
+ 'f_latin':('Lateinisch alphabetisiert','Literate in Latin script','Alphabétisé·e en écriture latine'),
+ 'f_latin_no':('Nicht lateinisch alphabetisiert','Not literate in Latin script','Pas alphabétisé·e en écriture latine'),
+ 'f_small_children':('Kleinkind unter 8 im Haushalt','Child under 8 in the household','Enfant de moins de 8 ans dans le ménage'),
+ 'f_small_children_no':('Kein Kleinkind unter 8 im Haushalt','No child under 8 in the household','Pas d’enfant de moins de 8 ans dans le ménage'),
+ 'help_prediction':('Ein Modell lernt aus Personen, deren A1-Frist schon abgelaufen ist, und schätzt daraus die Chance für diese Person. Es läuft auf diesem Rechner; keine Daten gehen hinaus.',
+                    'A model learns from people whose A1 deadline has already passed and estimates this person’s chance. It runs on this computer; no data leave it.',
+                    'Un modèle apprend des personnes dont le délai A1 est déjà échu et estime la chance de cette personne. Il tourne sur cet ordinateur ; aucune donnée ne sort.'),
+ 'contact_title':('Kontakt','Contact','Contact'),
+ 'contact_demo':('Erfundene Demo-Kontaktdaten. Im Echtbetrieb kommen sie aus dem Fallsystem; die 11 Exporte enthalten keine Kontaktdaten.',
+                 'Invented demo contact details. In live use they come from the case system; the 11 exports contain no contact data.',
+                 'Coordonnées de démo inventées. En production, elles viennent du système de dossiers ; les 11 exports n’en contiennent pas.'),
+ 'call':('Anrufen','Call','Appeler'),
+ 'write_mail':('E-Mail schreiben','Write email','Écrire un e-mail'),
+ 'mail_suggested':('Empfohlene Vorlage','Suggested template','Modèle recommandé'),
+ 'mail_other':('Andere Vorlagen','Other templates','Autres modèles'),
+ 'mail_preview':('Text ansehen','Preview text','Voir le texte'),
+ 'mail_lang':('Sprache der Person','Person’s language','Langue de la personne'),
+ 'help_contact':('«Anrufen» öffnet die Telefon-App des Computers, «E-Mail» das Mailprogramm mit fertigem Text. Nichts wird automatisch gesendet: Sie prüfen und senden selbst.',
+                 '“Call” opens the computer’s phone app, “Email” opens your mail program with the text filled in. Nothing is sent automatically: you check and send it yourself.',
+                 '« Appeler » ouvre l’application téléphone, « E-mail » ouvre votre messagerie avec le texte prêt. Rien n’est envoyé automatiquement : vous vérifiez et envoyez vous-même.'),
+ 'mail_a1':('A1-Prüfung anmelden','Register for the A1 exam','Inscription à l’examen A1'),
+ 'mail_meeting':('Termin vereinbaren','Arrange a meeting','Fixer un rendez-vous'),
+ 'mail_documents':('Unterlagen nachreichen','Send documents','Envoyer des documents'),
+ 'shield_title':('KI-Schutzschild','AI privacy shield','Bouclier de confidentialité IA'),
+ 'shield_lead':('Bevor Text an eine KI geht, erkennt das Cockpit persönliche Angaben auf diesem Rechner und ersetzt sie. Findet die Endkontrolle danach noch etwas, wird nichts gesendet.',
+                'Before any text goes to an AI, the cockpit detects personal details on this computer and replaces them. If the final check still finds something, nothing is sent.',
+                'Avant qu’un texte parte vers une IA, le cockpit détecte les données personnelles sur cet ordinateur et les remplace. Si le contrôle final trouve encore quelque chose, rien n’est envoyé.'),
+ 'shield_hidden':('Verborgen','Hidden','Masqué'),
+ 'shield_sent':('Genau dieser Text darf die KI erreichen','Exactly this text may reach the AI','Exactement ce texte peut atteindre l’IA'),
+ 'shield_none':('Keine persönlichen Angaben gefunden.','No personal details found.','Aucune donnée personnelle trouvée.'),
+ 'ai_state_off':('Sprachmodell nicht verbunden. Das Ergebnis unten wurde lokal ohne Sprachmodell erstellt; nichts hat den Rechner verlassen.',
+                 'Language model not connected. The result below was produced locally without a language model; nothing left this computer.',
+                 'Modèle de langage non connecté. Le résultat ci-dessous a été produit localement sans modèle ; rien n’a quitté cet ordinateur.'),
+ 'ai_state_missing_sdk':('Sprachmodell eingeschaltet, aber das Paket «anthropic» fehlt. Lokales Ergebnis angezeigt.',
+                         'Language model switched on, but the “anthropic” package is missing. Showing the local result.',
+                         'Modèle activé, mais le paquet « anthropic » manque. Résultat local affiché.'),
+ 'ai_state_answered':('Antwort von Claude (Anthropic). Gesendet wurde nur der maskierte Text unten.','Answer from Claude (Anthropic). Only the masked text below was sent.',
+                      'Réponse de Claude (Anthropic). Seul le texte masqué ci-dessous a été envoyé.'),
+ 'ai_state_blocked':('Gestoppt: Die Endkontrolle hat noch persönliche Angaben gefunden. Nichts wurde gesendet.','Stopped: the final check still found personal details. Nothing was sent.',
+                     'Arrêté : le contrôle final a encore trouvé des données personnelles. Rien n’a été envoyé.'),
+ 'ai_state_error':('Das Sprachmodell war nicht erreichbar ({state}). Lokales Ergebnis angezeigt.','The language model could not be reached ({state}). Showing the local result.',
+                   'Le modèle de langage était injoignable ({state}). Résultat local affiché.'),
+ 'ai_summary':('KI-Zusammenfassung','AI summary','Résumé IA'),
+ 'ai_local_summary':('Lokale Zusammenfassung (ohne Sprachmodell)','Local summary (no language model)','Résumé local (sans modèle de langage)'),
+ 'ai_analysis':('KI-Analyse','AI analysis','Analyse IA'),
+ 'ai_analysis_lead':('Die KI liest nur Summen und Gruppenquoten (Gruppen unter 8 Personen sind entfernt) und schreibt daraus Beobachtungen und Empfehlungen für die Leitung.',
+                     'The AI reads only totals and group rates (groups under 8 people removed) and writes observations and recommendations for management.',
+                     'L’IA ne lit que des totaux et des taux de groupe (groupes de moins de 8 personnes retirés) et en tire des constats et des recommandations pour la direction.'),
+ 'ai_analysis_open':('KI-Analyse öffnen','Open AI analysis','Ouvrir l’analyse IA'),
+ 'ai_refresh':('Neu erstellen','Regenerate','Régénérer'),
+ 'help_ai_analysis':('Erstellt eine Auswertung aus Summen, nie aus einzelnen Fällen. Sie sehen unten genau, welcher Text an die KI geht.',
+                     'Writes an evaluation from totals, never from single cases. Below you see exactly which text goes to the AI.',
+                     'Rédige une évaluation à partir de totaux, jamais de dossiers individuels. Vous voyez ci-dessous exactement le texte envoyé à l’IA.'),
+ 'local_obs_target':('Ziel 1: {met} von {due} Personen mit abgelaufener Frist haben A1 fristgerecht erreicht ({rate}).',
+                     'Goal 1: {met} of {due} people whose deadline has passed reached A1 on time ({rate}).',
+                     'Objectif 1 : {met} des {due} personnes au délai échu ont atteint l’A1 à temps ({rate}).'),
+ 'local_obs_course':('Stärkster Unterschied: {high} {high_rate} gegenüber {low} {low_rate}. Ein Zusammenhang, keine bewiesene Ursache.',
+                     'Largest difference: {high} {high_rate} versus {low} {low_rate}. An association, not a proven cause.',
+                     'Plus grand écart : {high} {high_rate} contre {low} {low_rate}. Une association, pas une cause prouvée.'),
+ 'local_obs_risk':('{n} Personen sind gefährdet: Frist in weniger als einem Jahr, noch kein Nachweis.','{n} people are at risk: deadline within a year, no proof yet.',
+                   '{n} personnes sont en danger : délai dans moins d’un an, pas encore de preuve.'),
+ 'local_obs_record':('{n} erreichte Ziele sind noch nicht offiziell erfasst und daher nicht abrechenbar.','{n} reached goals are not yet officially recorded and so cannot be claimed.',
+                     '{n} objectifs atteints ne sont pas encore saisis officiellement et ne sont donc pas facturables.'),
+ 'local_rec_course':('Empfehlung: Sprachkurse in den ersten sechs Monaten nach Einreise priorisieren und den Effekt mit echten Daten prüfen.',
+                     'Recommendation: prioritise language courses in the first six months after entry and test the effect with real data.',
+                     'Recommandation : prioriser les cours de langue dans les six premiers mois et vérifier l’effet avec des données réelles.'),
+ 'local_rec_record':('Empfehlung: fehlende Einträge in Integrationszielerreichung monatlich nachtragen.','Recommendation: add missing Integrationszielerreichung records every month.',
+                     'Recommandation : compléter chaque mois les saisies manquantes dans Integrationszielerreichung.'),
+})
+
+COPY.update({
+ 'pv_leave_text':('Standardmässig geht nichts hinaus. Wird ein KI-Dienst eingeschaltet, erreicht ihn nur maskierter Text oder Summen.',
+                  'By default nothing leaves. If an AI service is switched on, only masked text or totals reach it.',
+                  'Par défaut, rien ne sort. Si un service d’IA est activé, il ne reçoit que du texte masqué ou des totaux.'),
+ 'pv_out_3':('Der Regelassistent arbeitet mit festen Quellen und lehnt Fragen mit Personendaten ab.','The rules assistant uses fixed sources and refuses questions that contain personal data.',
+             'L’assistant des règles utilise des sources fixes et refuse les questions avec des données personnelles.'),
+ 'pv_ai':('KI und Datenschutz','AI and data protection','IA et protection des données'),
+ 'pv_ai_1':('Prognose pro Person: ein Modell, das auf diesem Rechner trainiert wird und läuft. Keine Daten verlassen den Rechner. Nationalität, Muttersprache und Geschlecht werden nicht verwendet.',
+            'Per-person forecast: a model trained and run on this computer. No data leave it. Nationality, mother tongue and gender are not used.',
+            'Prévision par personne : un modèle entraîné et exécuté sur cet ordinateur. Aucune donnée ne sort. Nationalité, langue maternelle et sexe ne sont pas utilisés.'),
+ 'pv_ai_2':('KI-Schutzschild: Namen, Geburtsdaten, AHV-, ZEMIS- und Klientennummern, Adressen, Telefon, E-Mail und IBAN werden lokal ersetzt, bevor Text zu einem Sprachmodell geht. Eine Endkontrolle stoppt die Anfrage, wenn noch etwas erkennbar ist.',
+            'AI privacy shield: names, birth dates, AHV, ZEMIS and client numbers, addresses, phone, email and IBAN are replaced locally before text goes to a language model. A final check stops the request if anything is still recognisable.',
+            'Bouclier IA : noms, dates de naissance, numéros AVS, ZEMIS et clients, adresses, téléphone, e-mail et IBAN sont remplacés localement avant tout envoi à un modèle de langage. Un contrôle final bloque la requête si quelque chose reste reconnaissable.'),
+ 'pv_ai_3':('Das Sprachmodell (Claude) ist ausgeschaltet, bis der Betrieb es bewusst einschaltet. Es erhält nie Fallzeilen, nur maskierte Dokumente oder Summen. Jede Anfrage steht im Protokoll, ohne Inhalt.',
+            'The language model (Claude) is off until operations deliberately switch it on. It never receives case rows, only masked documents or totals. Every request is logged, without content.',
+            'Le modèle de langage (Claude) est désactivé tant que l’exploitation ne l’active pas. Il ne reçoit jamais de lignes de dossier, seulement des documents masqués ou des totaux. Chaque requête est journalisée, sans contenu.'),
+ 'pv_ai_4':('Jede KI-Ausgabe ist ein Vorschlag. Entscheidungen trifft immer eine Fachperson.','Every AI output is a suggestion. A professional always makes the decision.',
+            'Chaque résultat d’IA est une suggestion. La décision revient toujours à un·e professionnel·le.'),
+})
+
 DATASET_NAMES = {'language':'Sprachstand','official':'Integrationszielerreichung','work':'Erwerb',
                  'education':'Integrationsförderung und Ausbildung','membership':'Dossierperson',
                  'support':'Finanzielle Unterstützung','zemis':'ZEMIS Tätigkeit','housing':'Unterbringung',
@@ -739,6 +861,9 @@ ICONS = {
     'ai':'<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
     'forecast':'<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 6-7"/><path d="M15 7h5v5"/>',
     'intake':'<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3v2h6V3M9 10h6M9 14h6M9 18h3"/>',
+    'ai-analysis':'<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
+    'mail':'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',
+    'phone':'<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>',
     'help':'<circle cx="12" cy="12" r="9"/><path d="M9.5 9.2a2.6 2.6 0 0 1 5 .9c0 1.7-2.5 2.3-2.5 3.9M12 17h.01"/>',
     'privacy':'<path d="M12 3l7 3v5c0 4.6-3 8.3-7 10-4-1.7-7-5.4-7-10V6z"/><rect x="9" y="11" width="6" height="5" rx="1"/><path d="M10 11V9.5a2 2 0 0 1 4 0V11"/>',
     'people':'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
@@ -783,10 +908,15 @@ def institutional_marks(lang):
     )
 
 
+def ai_callout(lang):
+    return (f'<section class="callout ai-callout"><span class="ai-badge">{text(lang,"ai_badge")} + Claude</span>'
+            f'<p class="callout-text">{text(lang,"ai_analysis_lead")}</p><a class="button" href="/ai-analysis">{icon("ai","icon")}{text(lang,"ai_analysis_open")}</a>{tip(lang,"help_ai_analysis")}</section>')
+
+
 def menus_for(role):
-    menus = ['overview','queue','reports','ai','forecast','intake']
+    menus = ['overview','queue','ai-analysis','reports','ai','forecast','intake']
     if role=='worker':
-        menus.remove('forecast')
+        menus = [m for m in menus if m not in ('forecast','ai-analysis')]
     if role=='manager':
         menus = [m for m in menus if m not in ('queue','intake')]
     if role=='importer':
@@ -868,7 +998,7 @@ def insight(lang,public):
     return f'<p class="insight">{sentence} {text(lang,"insight_clear" if separate else "insight_overlap")}</p>'
 
 
-def overview(lang,snapshot,cases,management,dimension='year',intake_categories=None,goal_index=0,trend=()):
+def overview(lang,snapshot,cases,management,dimension='year',intake_categories=None,goal_index=0,trend=(),ai_link=False):
     s = rules.counts(cases,0)
     metrics = (('people',len(cases)),('homes',len({c['home'] for c in cases})),('met',s['achieved']),
                ('follow',sum(s[key] for key in ('risk','overdue','review'))))
@@ -931,7 +1061,7 @@ def overview(lang,snapshot,cases,management,dimension='year',intake_categories=N
             [tr(lang,'snapshot'),tr(lang,'scope_in'),tr(lang,'met'),'%'],rows)+'</section>'
     return f'''<section class="hero"><img class="bern-image" src="/static/bern.jpg" alt=""><div class="hero-copy"><p class="eyebrow">{text(lang,'demo' if snapshot['source']=='synthetic' else 'local')}</p>
 {heading(lang,'overview',text(lang,'lead'))}</div></section>
-<div class="kpis">{kpis}</div><h2>{text(lang,'goals')}</h2><div class="three">{''.join(goals)}</div><div class="two">{coverage_card}{trend_card}</div>
+{ai_callout(lang) if ai_link else ''}<div class="kpis">{kpis}</div><h2>{text(lang,'goals')}</h2><div class="three">{''.join(goals)}</div><div class="two">{coverage_card}{trend_card}</div>
 {factor_panel}'''
 
 
@@ -1058,7 +1188,7 @@ def explain(lang,goal,asof):
     return sentence
 
 
-def detail(lang,case,asof):
+def detail(lang,case,asof,prediction=None,contact=None):
     step = rules.next_action(case,asof)
     facts = [(tr(lang,'worker'),case['worker']),(tr(lang,'status_label'),case['status']),(tr(lang,'entry_date'),swiss(case['entry'])),
              (tr(lang,'age_label'),case['age']),(tr(lang,'household_id'),case['home'])]
@@ -1107,9 +1237,173 @@ def detail(lang,case,asof):
         quality = f'<section class="panel"><h2>{text(lang,"quality")}</h2>{findings}</section>'
     back = f'<div class="back-row"><a class="chip back-link" href="/queue">{text(lang,"back_queue")}</a>{tip(lang,"help_back")}</div>'
     return (heading(lang,'case',esc(case['id']))+back+f'<div class="case-summary">{summary}</div>'+callout+
+            f'<div class="two assist">{prediction_panel(lang,case,prediction)}{contact_panel(lang,case,contact,step) if contact else ""}</div>'+
             f'<p class="legend">{text(lang,"ampel_legend")}</p><div class="three">'+''.join(sections)+
             f'</div><section class="panel"><h2>{text(lang,"timeline")}</h2>{rows}</section>{quality}')
 
+
+
+def percent(value):
+    return f'{round(value*100)} %'
+
+
+def factor_label(lang,name,case,raw_value):
+    person = case['tables']['clients'][0] if case['tables']['clients'] else {}
+    if name=='school_years':
+        return say(lang,'f_school_years',v=person.get('Schuljahre vor Einreise') if person.get('Schuljahre vor Einreise') is not None else '–')
+    if name=='age_at_entry':
+        born = rules.as_date(person.get('Geburtsdatum'))
+        return say(lang,'f_age_at_entry',v=rules.age_on(born,case['entry']) if born and case['entry'] else '–')
+    return text(lang,'f_'+name+('' if raw_value else '_no'))
+
+
+def prediction_panel(lang,case,result):
+    head = (f'<div class="section-head"><h2>{text(lang,"pred_title")}</h2><span class="ai-badge">{text(lang,"ai_badge")}</span>'
+            f'{tip(lang,"help_prediction")}</div>')
+    if result is None:
+        return f'<section class="panel ai-panel">{head}<p class="muted">{text(lang,"pred_none")}</p></section>'
+    p = result['probability']
+    tone = 'high' if p>=.6 else 'mid' if p>=.35 else 'low'
+    bar = (f'<svg class="pred-bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"/>'
+           f'<rect class="fill {tone}" width="{max(2,round(p*100))}" height="8" rx="4"/><rect class="base" x="{round(result["base"]*100)}" width="0.8" height="8"/></svg>')
+    raw = result['raw']
+    items = ''.join(f'<li class="{"up" if effect>0 else "down"}"><span>{"▲" if effect>0 else "▼"}</span>{factor_label(lang,name,case,raw.get(name))}'
+                    f' <em>{text(lang,"pred_up" if effect>0 else "pred_down")}</em></li>' for name,effect in result['factors'])
+    scenario = ''
+    if result['scenario']:
+        key,after = result['scenario']
+        scenario = f'<p class="pred-scenario">{say(lang,key,before=percent(p),after=percent(after))}</p>'
+    peers = f'<p>{say(lang,"pred_peers",n=result["peers"][0],k=result["peers"][1])}</p>' if result['peers'] else ''
+    v = result['validation']
+    model = say(lang,'pred_model',n=v['n'],auc=f'{v["auc"]:.2f}',skill=percent(v['skill']))
+    return (f'<section class="panel ai-panel">{head}<p>{text(lang,"pred_lead")}</p>'
+            f'<div class="pred-figure"><strong class="{tone}">{percent(p)}</strong><span>{say(lang,"pred_base",rate=percent(result["base"]))}</span></div>{bar}'
+            f'{scenario}<h3>{text(lang,"pred_factors")}</h3><ul class="pred-factors">{items}</ul>{peers}'
+            f'<p class="legend">{model}</p><p class="legend caution">{text(lang,"pred_caution")}</p></section>')
+
+
+MAIL = {
+ 'mail_a1':(('Anmeldung zur A1-Prüfung','Registering for the A1 exam','Inscription à l’examen A1'),
+            ('Guten Tag\n\nIhre Frist für den Nachweis Deutsch A1 endet am {date}. Gerne unterstütze ich Sie bei der Anmeldung zu einer fide- oder telc-Prüfung. Bitte melden Sie sich bei mir für einen Termin.\n\nFreundliche Grüsse\n{worker}\nAsylsozialdienst Stadt Bern',
+             'Hello\n\nYour deadline for German A1 proof is {date}. I would be glad to help you register for a fide or telc exam. Please contact me to arrange an appointment.\n\nKind regards\n{worker}\nAsylum Social Service, City of Bern',
+             'Bonjour\n\nVotre délai pour prouver le niveau A1 en allemand est le {date}. Je vous aide volontiers à vous inscrire à un examen fide ou telc. Merci de me contacter pour fixer un rendez-vous.\n\nMeilleures salutations\n{worker}\nService social de l’asile, Ville de Berne')),
+ 'mail_meeting':(('Termin beim Asylsozialdienst','Appointment at the Asylum Social Service','Rendez-vous au Service social de l’asile'),
+            ('Guten Tag\n\nIch möchte mit Ihnen die nächsten Schritte besprechen: Deutsch, Arbeit oder Ausbildung. Bitte rufen Sie mich an oder antworten Sie auf diese E-Mail, damit wir einen Termin finden.\n\nFreundliche Grüsse\n{worker}\nAsylsozialdienst Stadt Bern',
+             'Hello\n\nI would like to discuss the next steps with you: German, work or education. Please call me or reply to this email so we can find a time to meet.\n\nKind regards\n{worker}\nAsylum Social Service, City of Bern',
+             'Bonjour\n\nJ’aimerais discuter avec vous des prochaines étapes : allemand, travail ou formation. Merci de m’appeler ou de répondre à cet e-mail pour fixer un rendez-vous.\n\nMeilleures salutations\n{worker}\nService social de l’asile, Ville de Berne')),
+ 'mail_documents':(('Unterlagen für Ihr Dossier','Documents for your file','Documents pour votre dossier'),
+            ('Guten Tag\n\nFür Ihr Dossier fehlt noch ein Nachweis, zum Beispiel ein Sprachzertifikat oder ein Arbeitsvertrag. Bitte bringen Sie das Dokument zum nächsten Termin mit oder senden Sie mir eine Kopie.\n\nFreundliche Grüsse\n{worker}\nAsylsozialdienst Stadt Bern',
+             'Hello\n\nYour file is still missing a document, for example a language certificate or an employment contract. Please bring it to your next appointment or send me a copy.\n\nKind regards\n{worker}\nAsylum Social Service, City of Bern',
+             'Bonjour\n\nIl manque encore un justificatif dans votre dossier, par exemple un certificat de langue ou un contrat de travail. Merci de l’apporter au prochain rendez-vous ou de m’en envoyer une copie.\n\nMeilleures salutations\n{worker}\nService social de l’asile, Ville de Berne')),
+}
+MAIL_FOR = {'act_g1_risk':'mail_a1','act_g1_plan':'mail_a1','act_g1_verify':'mail_documents','act_g2_verify':'mail_documents','act_zemis':'mail_documents'}
+
+
+def demo_contact(case):
+    number = int(''.join(ch for ch in case['id'] if ch.isdigit()) or 0)
+    return {'phone':f'+41 79 555 {number//100%100:02d} {number%100:02d}','email':f'{case["id"].lower()}@example.org'}
+
+
+def contact_panel(lang,case,contact,step):
+    suggested = MAIL_FOR.get(step['key'],'mail_meeting')
+    deadline = swiss(case['goals'][0].get('deadline')) or '—'
+    def mail_links(key):
+        (subjects,bodies) = MAIL[key]
+        links = ''.join(f'<a class="button{"" if i==lang else " secondary"}" href="mailto:{quote(contact["email"])}?subject={quote(subjects[i])}&amp;body={quote(bodies[i].format(date=deadline,worker=case["worker"]))}">'
+                        f'{icon("mail","icon")}{text(lang,"write_mail")} · {code}</a>' for i,code in enumerate(('DE','EN','FR')))
+        preview = esc(bodies[lang].format(date=deadline,worker=case['worker']))
+        return (f'<div class="mail-template"><h3>{text(lang,key)}</h3><div class="mail-actions">{links}</div>'
+                f'<details><summary>{text(lang,"mail_preview")}</summary><pre class="mail-body">{esc(subjects[lang])}\n\n{preview}</pre></details></div>')
+    others = ''.join(mail_links(k) for k in MAIL if k!=suggested)
+    phone = contact['phone']
+    return (f'<section class="panel contact-panel"><div class="section-head"><h2>{text(lang,"contact_title")}</h2>{tip(lang,"help_contact")}</div>'
+            f'<div class="contact-row"><a class="button call" href="tel:{phone.replace(" ","")}">{icon("phone","icon")}{text(lang,"call")} · {esc(phone)}</a>'
+            f'<a class="contact-mail" href="mailto:{quote(contact["email"])}">{esc(contact["email"])}</a></div>'
+            f'<p class="eyebrow-dark">{text(lang,"mail_suggested")}</p>{mail_links(suggested)}'
+            f'<details class="more-templates"><summary>{text(lang,"mail_other")}</summary>{others}</details>'
+            f'<p class="legend">{text(lang,"contact_demo")}</p></section>')
+
+
+def shield_panel(lang,report):
+    labels = {'ahv':'AHV','iban':'IBAN','email':'E-Mail','phone':'Tel.','case_id':'ID / ZEMIS','number':'Nr.','date':'Datum','address':'Adresse','name':'Name'}
+    chips = ''.join(f'<span class="shield-chip">{esc(labels[k])} · {n}</span>' for k,n in sorted(report['masked'].items()))
+    found = f'<p><strong>{text(lang,"shield_hidden")}:</strong> {chips}</p>' if chips else f'<p>{text(lang,"shield_none")}</p>'
+    sent = esc(report['sent'][:4000])
+    marked = sent
+    for label in ('[NAME]','[DATUM]','[AHV]','[ADRESSE]','[TELEFON]','[E-MAIL]','[IBAN]','[ID]','[NUMMER]'):
+        marked = marked.replace(label,f'<mark>{label}</mark>')
+    return (f'<section class="panel shield"><div class="section-head"><h2>{icon("privacy","icon")}{text(lang,"shield_title")}</h2></div>'
+            f'<p>{text(lang,"shield_lead")}</p>{found}<details open><summary>{text(lang,"shield_sent")}</summary><pre class="shield-text">{marked}</pre></details></section>')
+
+
+def ai_state(lang,report):
+    state = report['state']
+    if state in ('off','missing_sdk','answered','blocked'):
+        return f'<p class="ai-state {state}">{text(lang,"ai_state_"+state)}</p>'
+    return f'<p class="ai-state error">{say(lang,"ai_state_error",state=state)}</p>'
+
+
+def ai_answer(lang,answer,report,local_lines):
+    if answer:
+        body = ''.join(f'<p>{esc(line)}</p>' for line in answer.split('\n') if line.strip())
+        title = text(lang,'ai_summary')
+    else:
+        body = '<ul class="plain">'+''.join(f'<li>{line}</li>' for line in local_lines)+'</ul>'
+        title = text(lang,'ai_local_summary')
+    return f'<div class="ai-answer"><h3>{icon("ai","icon")}{title}</h3>{body}</div>{ai_state(lang,report)}'
+
+
+def due_outcomes(cases):
+    """People whose A1 deadline has passed, and how many of them reached A1 on time."""
+    due = [c for c in cases if c['goals'][0].get('due') and c['goals'][0]['state'] in ('achieved','late','overdue')]
+    return len(due),sum(c['goals'][0]['state']=='achieved' for c in due)
+
+
+def analysis_material(cases,asof,model):
+    """Aggregate-only text for the language model: totals and unsuppressed group rates, no case rows."""
+    totals = dict(zip(rules.A1_TOTALS,rules.a1_totals(cases)))
+    lines = [f'Stichtag Ende {asof.month:02d}/{asof.year}. Personen {totals["people"]}, im Geltungsbereich A1 {totals["scope_in"]}.',
+             'Ziel 1 (A1 in 3 Jahren): Frist abgelaufen {}, davon fristgerecht {}, verspätet {}, verpasst {}.'.format(*due_outcomes(cases),totals['late'],totals['overdue'])]
+    for i,key in enumerate(('Ziel 1 Sprache','Ziel 2 Arbeit/Ausbildung','Ziel 3 Finanzielle Selbstständigkeit')):
+        lines.append(f'{key}: '+', '.join(f'{state} {n}' for state,n in sorted(rules.counts(cases,i).items())))
+    for dimension in ('course','age','schooling','year'):
+        rows,_,_ = rules.analysis(cases,asof,dimension)
+        shown = [(label,n,k/n) for label,n,observed,k,band in rows if k is not None and n]
+        if shown:
+            lines.append(f'A1 fristgerecht nach {dimension}: '+'; '.join(f'{label} {round(rate*100)}% (n={n})' for label,n,rate in shown))
+    lines.append(f'Erreichte Ziele ohne offiziellen Eintrag: {sum(u for _,u,_ in rules.payments(cases))}.')
+    lines.append(f'Personen, deren ZEMIS-Meldung nicht zu Erwerb passt: {sum(1 for c in cases if c["zemis_findings"])}.')
+    if model.ready:
+        lines.append(f'Lokales Prognosemodell A1: AUC {model.validation["auc"]:.2f}, n={model.validation["n"]}; Gewichte '
+                     +', '.join(f'{name} {w:+.2f}' for name,w in zip(('Kurs früh','Kurs spät','Schuljahre','Alter bei Einreise','lateinisch alphabetisiert','Kleinkind'),model.weights[1:])))
+    return '\n'.join(lines)
+
+
+def local_analysis(lang,cases,asof):
+    lines = []
+    due,met = due_outcomes(cases)
+    if due:
+        lines.append(say(lang,'local_obs_target',met=met,due=due,rate=percent(met/due)))
+    rows,_,_ = rules.analysis(cases,asof,'course')
+    shown = [(label,k/n) for label,n,observed,k,band in rows if k is not None and n]
+    if len(shown)>=2:
+        high,low = max(shown,key=lambda r:r[1]),min(shown,key=lambda r:r[1])
+        lines.append(say(lang,'local_obs_course',high=tr(lang,high[0]),high_rate=percent(high[1]),low=tr(lang,low[0]),low_rate=percent(low[1])))
+    risk = rules.counts(cases,0).get('risk',0)
+    if risk:
+        lines.append(say(lang,'local_obs_risk',n=risk))
+    pending = sum(u for _,u,_ in rules.payments(cases))
+    if pending:
+        lines.append(say(lang,'local_obs_record',n=pending))
+    lines += [text(lang,'local_rec_course'),text(lang,'local_rec_record')]
+    return lines
+
+
+def ai_analysis_page(lang,answer,report,local_lines):
+    return (heading(lang,'ai_analysis',text(lang,'ai_analysis_lead'))+
+            f'<section class="panel ai-panel"><div class="section-head"><h2>{text(lang,"ai_analysis")}</h2><span class="ai-badge">Claude</span>{tip(lang,"help_ai_analysis")}</div>'
+            f'{ai_answer(lang,answer,report,local_lines)}<a class="button secondary" href="/ai-analysis?refresh=1">{text(lang,"ai_refresh")}</a></section>'
+            +shield_panel(lang,report))
 
 
 def reports(lang,snapshot,history,role,csrf,hosted,notice='',issues=(),manifest=()):
@@ -1311,6 +1605,7 @@ def privacy(lang):
             f'<section class="panel"><h2>{text(lang,"pv_who")}</h2>{who}</section>'
             f'<div class="two"><section class="panel"><h2>{text(lang,"pv_stored")}</h2>{listing("pv_stored",4)}</section>'
             f'<section class="panel"><h2>{text(lang,"pv_out")}</h2>{listing("pv_out",3)}</section></div>'
+            f'<section class="panel ai-panel"><div class="section-head"><h2>{text(lang,"pv_ai")}</h2><span class="ai-badge">{text(lang,"ai_badge")}</span></div>{listing("pv_ai",4)}</section>'
             f'<section class="panel"><h2>{text(lang,"pv_delete")}</h2><p>{text(lang,"pv_delete_text")}</p><p class="legend">{text(lang,"pv_demo")}</p></section>')
 
 

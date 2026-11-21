@@ -200,6 +200,31 @@ class HTTPTests(TestCase):
         self.assertIn(b'id="zemis"',plan)
         self.assertNotIn(b'state=zemis',plan)
 
+    def test_ai_forecast_contact_and_privacy_shield(self):
+        csrf = self.login('judging')
+        self.assertEqual(self.request('/seed',{'csrf':csrf,'date':data.MONTHS[1]})[0],303)
+        case = next(c for c in ('DEMO-00004','DEMO-00006','DEMO-00013') if b'pred-figure' in self.request('/case/'+c)[1])
+        page = self.request('/case/'+case)[1]
+        self.assertIn(b'href="tel:+4179555',page)
+        self.assertIn(b'href="mailto:',page)
+        status, analysis = self.request('/ai-analysis')
+        self.assertEqual(status,200)
+        sent = analysis.split(b'shield-text',1)[1]
+        self.assertNotIn(b'DEMO-',sent)
+        status, scanned = self.request('/intake-demo',{'csrf':csrf})
+        self.assertEqual(status,200)
+        self.assertIn(b'[NAME]',scanned)
+        for secret in (b'Amina',b'756.1234',b'Musterstrasse',b'555 12 34'):
+            self.assertNotIn(secret,scanned)
+        db = data.connect(self.path)
+        try:
+            self.assertFalse(any('Amina' in ' '.join(row) for row in db.execute('SELECT * FROM audit')))
+        finally:
+            db.close()
+        self.cookies.clear()
+        self.login('worker')
+        self.assertEqual(self.request('/ai-analysis')[0],403)
+
     def test_demo_personas_apply_backend_permissions_and_preserve_locale_context(self):
         self.server.hosted = True
         try:

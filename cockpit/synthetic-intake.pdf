@@ -6,32 +6,53 @@ endobj
 << /Type /Pages /Kids [3 0 R] /Count 1 >>
 endobj
 3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>
 endobj
 4 0 obj
-<< /Length 191 >>
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Length 1528 >>
 stream
-BT /F1 12 Tf 50 740 Td
-(Situationsanalyse und Potenzialerhebung) Tj 0 -18 Td
-(ZEMIS: SYN-Z00001) Tj 0 -18 Td
-(Demo intake; fictional record) Tj 0 -18 Td
-(Childcare scheduling) Tj 0 -18 Td
+BT
+/F2 15 Tf 1 0 0 1 56 800 Tm (Situationsanalyse und Potenzialerhebung) Tj
+/F1 10 Tf 1 0 0 1 56 776 Tm (Fiktives Demo-Dokument - keine echte Person) Tj
+/F1 11 Tf 1 0 0 1 56 757 Tm () Tj
+/F1 11 Tf 1 0 0 1 56 737 Tm (ZEMIS: SYN-Z00001) Tj
+/F1 11 Tf 1 0 0 1 56 717 Tm (Name: Amina Beispiel) Tj
+/F1 11 Tf 1 0 0 1 56 697 Tm (Geburtsdatum: 08.04.1987) Tj
+/F1 11 Tf 1 0 0 1 56 677 Tm (AHV-Nr.: 756.1234.5678.97) Tj
+/F1 11 Tf 1 0 0 1 56 657 Tm (Adresse: Musterstrasse 12, 3027 Bern) Tj
+/F1 11 Tf 1 0 0 1 56 637 Tm (Telefon: 079 555 12 34   E-Mail: amina.beispiel@example.org) Tj
+/F1 11 Tf 1 0 0 1 56 617 Tm () Tj
+/F2 12 Tf 1 0 0 1 56 597 Tm (Ausgangslage) Tj
+/F1 11 Tf 1 0 0 1 56 576 Tm (Frau Beispiel lebt mit ihrem Ehemann und zwei Kindern \(3 und 6 Jahre\) in Bern.) Tj
+/F1 11 Tf 1 0 0 1 56 556 Tm (Sie hat in Afghanistan neun Jahre die Schule besucht und als Schneiderin gearbeitet.) Tj
+/F1 11 Tf 1 0 0 1 56 536 Tm (Deutschkenntnisse: muendlich Grundkenntnisse, schriftlich noch keine.) Tj
+/F1 11 Tf 1 0 0 1 56 516 Tm () Tj
+/F2 12 Tf 1 0 0 1 56 496 Tm (Hindernisse) Tj
+/F1 11 Tf 1 0 0 1 56 475 Tm (Die Kinderbetreuung ist nur vormittags organisiert. Ein Abendkurs ist nicht moeglich.) Tj
+/F1 11 Tf 1 0 0 1 56 455 Tm (Frau Beispiel moechte rasch Deutsch lernen und spaeter in einer Schneiderei arbeiten.) Tj
+/F1 11 Tf 1 0 0 1 56 435 Tm () Tj
+/F2 12 Tf 1 0 0 1 56 415 Tm (Vereinbarte naechste Schritte) Tj
+/F1 11 Tf 1 0 0 1 56 394 Tm (Kita-Platz fuer das juengere Kind abklaeren. Danach Anmeldung fuer einen Vormittagskurs A1.) Tj
 ET
 endstream
 endobj
-5 0 obj
-<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
-endobj
 xref
-0 6
+0 7
 0000000000 65535 f 
 0000000009 00000 n 
 0000000058 00000 n 
 0000000115 00000 n 
-0000000241 00000 n 
-0000000482 00000 n 
+0000000251 00000 n 
+0000000348 00000 n 
+0000000450 00000 n 
 trailer
-<< /Size 6 /Root 1 0 R >>
+<< /Size 7 /Root 1 0 R >>
 startxref
-552
+2030
 %%EOF

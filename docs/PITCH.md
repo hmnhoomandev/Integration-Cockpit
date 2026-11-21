@@ -23,6 +23,10 @@
 
 > “A1 is due on 16 October, in 16 days. The next step is right at the top: register for a fide or telc exam. Below it, every result shows the Excel rows it came from.”
 
+*Point to the **KI-Prognose** panel and the **Kontakt** panel on a case at risk (for example DEMO-00006).*
+
+> “The AI forecast comes from a model trained on this computer, using the people whose deadline has already passed. This person has an 11 % chance of reaching A1 on time; the average is 52 %. The panel also says why: no course in the first six months. Nationality, mother tongue and gender are never used. One click calls the person, or opens a prepared email in German, French or English.”
+
 *Switch to the October snapshot in **Daten & Berichte** and reopen the case.*
 
 > “One month later, the same eleven files come in again. A fide certificate dated 12 October has arrived, four days before the deadline, so the light turns green. But the official goal table doesn’t have it yet, so the cockpit says: record it, or the payment is lost.”
@@ -48,6 +52,10 @@
 > “Payments: 103 goals are already reached but cannot be claimed yet, because the official record is missing. One click opens exactly those cases. The 2027 rule shortens responsibility from seven to five years: 544 people would leave earlier, and 25 goals would be overdue at once. Finally, ZEMIS shows 27 jobs that don’t match our records.”
 
 ## 2:30–3:00 · Trust and next step
+
+*Open **Situationsanalyse** and click **Synthetisches PDF prüfen**.*
+
+> “Before any document reaches a language model, our privacy shield replaces names, birth dates, AHV and ZEMIS numbers, addresses and phone numbers on this computer. You see exactly what would be sent. If anything is still recognisable, nothing goes out.”
 
 *Open **Datenschutz** for two seconds, then click **Excel herunterladen**.*
 

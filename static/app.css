@@ -478,3 +478,54 @@ td .lights { white-space: nowrap; }
   .figure strong { font-size: 1.5rem; }
 }
 main > .tablewrap td:nth-child(3) { white-space: normal; min-width: 18rem; }
+
+/* ── AI forecast, contact and privacy shield ───────── */
+.ai-badge { display: inline-flex; align-items: center; gap: .3rem; padding: .22rem .6rem; border-radius: 99px; font-size: .72rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  color: #fff; background: linear-gradient(120deg, #5b3fd0, #b3261e); }
+.ai-panel { border-color: #d9cff5; box-shadow: inset 4px 0 0 #6d4fd8, var(--shadow); }
+.two.assist { align-items: start; }
+.two.assist > .panel { margin-bottom: 0; }
+.pred-figure { display: flex; align-items: baseline; flex-wrap: wrap; gap: .4rem 1rem; margin: .8rem 0 .4rem; }
+.pred-figure strong { font-size: 3rem; font-weight: 850; letter-spacing: -.05em; line-height: 1; }
+.pred-figure strong.high { color: #1d6b45; }
+.pred-figure strong.mid { color: var(--gold-text); }
+.pred-figure strong.low { color: var(--red-strong); }
+.pred-figure span { color: var(--muted); font-size: .88rem; }
+.pred-bar { display: block; width: 100%; height: 10px; margin-bottom: .8rem; }
+.pred-bar .track { fill: var(--paper-2); }
+.pred-bar .fill.high { fill: #2a9160; }
+.pred-bar .fill.mid { fill: #e2b322; }
+.pred-bar .fill.low { fill: var(--red); }
+.pred-bar .base { fill: var(--bear); }
+.pred-scenario { margin: .3rem 0 .6rem; padding: .6rem .8rem; border-radius: 10px; background: #efeafc; color: #3f2c8f; font-weight: 650; }
+.pred-factors { list-style: none; margin: .4rem 0 .7rem; padding: 0; display: grid; gap: .35rem; }
+.pred-factors li { display: flex; align-items: baseline; gap: .5rem; font-size: .92rem; }
+.pred-factors li span { font-size: .7rem; }
+.pred-factors li.up span, .pred-factors li.up em { color: #1d6b45; }
+.pred-factors li.down span, .pred-factors li.down em { color: var(--red-strong); }
+.pred-factors em { font-style: normal; font-weight: 700; font-size: .8rem; }
+.legend.caution { color: var(--red-strong); font-weight: 650; }
+.contact-row { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem; margin: .8rem 0 1rem; }
+.button.call { background: #1d6b45; border-color: #1d6b45; }
+.contact-mail { font-weight: 650; overflow-wrap: anywhere; }
+.button .icon, .chip .icon { width: 1rem; height: 1rem; margin-right: .35rem; vertical-align: -.15rem; }
+.mail-template { margin: .4rem 0 .8rem; }
+.mail-template h3 { margin: 0 0 .45rem; font-size: .95rem; letter-spacing: 0; text-transform: none; color: var(--ink); }
+.mail-actions { display: flex; flex-wrap: wrap; gap: .45rem; margin-bottom: .4rem; }
+.button.secondary { background: var(--panel); color: var(--ink); border: 1px solid var(--line-strong); box-shadow: none; }
+.mail-body, .shield-text { white-space: pre-wrap; margin: .5rem 0 0; padding: .8rem .9rem; border-radius: 10px; background: var(--paper); border: 1px solid var(--line);
+  font: .86rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.more-templates { margin-top: .4rem; }
+.shield { box-shadow: inset 4px 0 0 #1d6b45, var(--shadow); }
+.shield h2 { display: flex; align-items: center; gap: .45rem; }
+.shield h2 .icon { width: 1.3rem; height: 1.3rem; color: #1d6b45; }
+.shield-chip { display: inline-block; margin: .15rem .25rem .15rem 0; padding: .18rem .55rem; border-radius: 99px; background: #e2f2e9; color: #1d6b45; font-size: .8rem; font-weight: 700; }
+.shield-text mark { background: #1d6b45; color: #fff; border-radius: 4px; padding: 0 .25rem; font-weight: 700; }
+.ai-answer { margin: .6rem 0; padding: 1rem 1.1rem; border-radius: 12px; background: linear-gradient(135deg, #f4f0ff, #fff7f5); border: 1px solid #e2d9fa; }
+.ai-answer h3 { display: flex; align-items: center; gap: .4rem; margin: 0 0 .5rem; font-size: .85rem; color: #4a33a8; }
+.ai-answer p { margin: .35rem 0; line-height: 1.55; }
+.ai-state { font-size: .84rem; color: var(--muted); margin: .3rem 0 .8rem; }
+.ai-state.answered { color: #1d6b45; font-weight: 650; }
+.ai-state.blocked, .ai-state.error { color: var(--red-strong); font-weight: 650; }
+.ai-callout { background: linear-gradient(120deg, #f4f0ff, #fff); border-color: #e2d9fa; }
+.ai-answer h3 .icon { width: 1.1rem; height: 1.1rem; flex: none; }
