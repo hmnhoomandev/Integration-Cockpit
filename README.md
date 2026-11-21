@@ -69,6 +69,10 @@ Only masked text or aggregate figures are sent. Each request is logged as an eve
 python3 -m cockpit.server account <username> <judge|worker|manager|importer> [--assignment "Anna Keller"]
 ```
 
+## Public demo on Vercel
+
+The repository deploys to Vercel as-is: `app.py` serves the hosted, synthetic-only profile, and three environment variables set the jury account and the session secret. See [docs/DEPLOY-VERCEL.md](docs/DEPLOY-VERCEL.md).
+
 ## Real data
 
 ```sh

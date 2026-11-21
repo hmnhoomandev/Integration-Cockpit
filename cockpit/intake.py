@@ -3,6 +3,7 @@ import re
 import shutil
 import subprocess
 import sys
+import zlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -22,6 +23,23 @@ def run_text(command, timeout):
     return process.stdout[:50_000].decode('utf-8','replace')
 
 
+STREAM = re.compile(rb'stream\r?\n(.*?)\r?\nendstream',re.S)
+SHOWN = re.compile(rb'\(((?:\\.|[^\\)])*)\)\s*Tj')
+
+
+def plain_text(path):
+    """Last-resort reader for simple text PDFs where no system tool exists (e.g. serverless hosts)."""
+    lines = []
+    for raw in STREAM.findall(path.read_bytes()[:2_000_000]):
+        try:
+            raw = zlib.decompress(raw)
+        except zlib.error:
+            pass
+        for shown in SHOWN.findall(raw):
+            lines.append(re.sub(rb'\\([()\\])',rb'\1',shown).decode('latin-1'))
+    return '\n'.join(lines)[:50_000]
+
+
 def text_layer(path):
     tool = shutil.which('pdftotext')
     if tool:
@@ -29,7 +47,7 @@ def text_layer(path):
     jxa = shutil.which('osascript') if sys.platform=='darwin' else None
     if jxa:
         return run_text([jxa,'-l','JavaScript',str(Path(__file__).with_name('pdfkit.js')),str(path)],8)
-    return ''
+    return plain_text(path)
 
 
 def scan(path):

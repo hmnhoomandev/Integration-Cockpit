@@ -6,8 +6,9 @@ from datetime import date
 from email.parser import BytesParser
 from email.policy import default
 from getpass import getpass
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from hashlib import scrypt, sha256
-from hmac import compare_digest
+from hmac import compare_digest, new as hmac_new
 from http.cookies import SimpleCookie, CookieError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -53,10 +54,29 @@ def digest(token):
     return sha256(token.encode()).hexdigest()
 
 
+def b64(raw):
+    return urlsafe_b64encode(raw).rstrip(b'=').decode()
+
+
+def sign(secret,message):
+    return b64(hmac_new(secret.encode(),message.encode(),sha256).digest())
+
+
+def signed_session(secret,username):
+    """Self-verifying session token for hosts without shared storage, such as serverless instances."""
+    payload = b64(f'{int(time.time())+TTL}:{username}:{secrets.token_hex(8)}'.encode())
+    return payload+'.'+sign(secret,payload)
+
+
 class App(ThreadingHTTPServer):
     daemon_threads = True
 
     def __init__(self,address,path,hosted):
+        self.setup_state(path,hosted)
+        super().__init__(address,Handler)
+
+    def setup_state(self,path,hosted):
+        self.session_secret = os.getenv('COCKPIT_SESSION_SECRET','')
         self.path = path
         self.hosted = hosted
         self.attempts = defaultdict(list)
@@ -67,7 +87,23 @@ class App(ThreadingHTTPServer):
         self.ai_answers = {}
         with closing(data.connect(path)):
             pass
-        super().__init__(address,Handler)
+
+    def restore_session(self,db,token):
+        """Recreate a signed session that another instance issued. No-op without a session secret."""
+        if not self.session_secret or '.' not in token:
+            return
+        payload,signature = token.rsplit('.',1)
+        if not compare_digest(signature,sign(self.session_secret,payload)):
+            return
+        try:
+            expires,username,_ = urlsafe_b64decode(payload+'='*(-len(payload)%4)).decode().split(':',2)
+        except (ValueError,UnicodeDecodeError):
+            return
+        if int(expires)<=time.time() or not db.execute('SELECT 1 FROM accounts WHERE username=?',(username,)).fetchone():
+            return
+        with db:
+            db.execute('INSERT OR IGNORE INTO sessions VALUES(?,?,?,?,?)',
+                       (digest(token),username,sign(self.session_secret,'csrf:'+token),int(expires),None))
 
     def read_model(self,db,snapshot):
         def load():
@@ -208,7 +244,8 @@ class Handler(BaseHTTPRequestHandler):
         db = data.connect(self.server.path,initialize=False)
         try:
             token = cookie_value('sid')
-            if re.fullmatch(r'[A-Za-z0-9_-]{40,60}',token):
+            if re.fullmatch(r'[A-Za-z0-9_-]{40,60}|[A-Za-z0-9_-]{20,120}\.[A-Za-z0-9_-]{43}',token):
+                self.server.restore_session(db,token)
                 self.identity = db.execute('SELECT a.username,a.role,a.assignment,s.csrf,s.selected FROM sessions s JOIN accounts a USING(username) WHERE token=? AND expires>?',
                                            (digest(token),int(time.time()))).fetchone()
             if not self.identity:
@@ -431,10 +468,12 @@ class Handler(BaseHTTPRequestHandler):
             password = fields.get('password','')
             row = db.execute('SELECT password FROM accounts WHERE username=?',(username,)).fetchone()
             if len(password)<=256 and valid_password(row['password'] if row else self.server.dummy,password) and row:
-                token = secrets.token_urlsafe(32)
+                secret = self.server.session_secret
+                token = signed_session(secret,username) if secret else secrets.token_urlsafe(32)
                 with db:
                     db.execute('DELETE FROM sessions WHERE expires<=?',(int(time.time()),))
-                    db.execute('INSERT INTO sessions VALUES(?,?,?,?,?)',(digest(token),username,secrets.token_urlsafe(32),int(time.time())+TTL,None))
+                    db.execute('INSERT INTO sessions VALUES(?,?,?,?,?)',(digest(token),username,
+                               sign(secret,'csrf:'+token) if secret else secrets.token_urlsafe(32),int(time.time())+TTL,None))
                     db.execute('INSERT INTO audit VALUES(datetime("now"),?,?)',('sign_in','success'))
                 return self.redirect('/',[('Set-Cookie',self.cookie('sid',token,TTL)),('Set-Cookie',self.cookie('login_csrf','',0))])
         csrf = secrets.token_urlsafe(32)
