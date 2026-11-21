@@ -126,6 +126,9 @@ def connect(path):
       CREATE TABLE IF NOT EXISTS audit(at TEXT, action TEXT, outcome TEXT);
       CREATE TABLE IF NOT EXISTS forecast_input(
         username TEXT PRIMARY KEY REFERENCES accounts(username) ON DELETE CASCADE, series TEXT);
+      CREATE TABLE IF NOT EXISTS demo_roles(
+        session TEXT PRIMARY KEY REFERENCES sessions(token) ON DELETE CASCADE,
+        role TEXT NOT NULL CHECK(role IN ('worker','manager','importer')));
       CREATE TABLE IF NOT EXISTS intake_demo(
         session TEXT REFERENCES sessions(token) ON DELETE CASCADE,
         snapshot INTEGER REFERENCES snapshots(id) ON DELETE CASCADE,

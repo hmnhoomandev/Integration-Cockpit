@@ -144,6 +144,30 @@ class HTTPTests(TestCase):
         finally:
             self.server.hosted = False
 
+    def test_demo_personas_apply_backend_permissions_and_preserve_locale_context(self):
+        self.server.hosted = True
+        try:
+            csrf = self.login('judging')
+            self.assertEqual(self.request('/demo-role',{'csrf':csrf,'role':'worker'})[0],303)
+            self.assertEqual(self.request('/case/DEMO-00001')[0],200)
+            self.assertEqual(self.request('/case/DEMO-00003')[0],404)
+            self.assertEqual(self.request('/language/fr-CH?view=queue&state=risk')[0],303)
+            self.assertIn(b'value="risk" selected',self.request('/queue?state=risk')[1])
+            self.assertEqual(self.request('/forecast')[0],403)
+            self.assertEqual(self.request('/demo-role',{'csrf':csrf,'role':'manager'})[0],303)
+            self.assertEqual(self.request('/queue')[0],403)
+            self.assertIn('Tendance mensuelle A1'.encode(),self.request('/overview')[1])
+            self.assertEqual(self.request('/demo-role',{'csrf':csrf,'role':'importer'})[0],303)
+            self.assertEqual(self.request('/export')[0],403)
+            self.assertEqual(self.request('/quality')[0],200)
+            self.assertEqual(self.request('/demo-role',{'csrf':csrf,'role':'judge'})[0],303)
+            self.assertEqual(self.request('/export')[0],200)
+            self.cookies.clear()
+            csrf = self.login('worker')
+            self.assertEqual(self.request('/demo-role',{'csrf':csrf,'role':'judge'})[0],403)
+        finally:
+            self.server.hosted = False
+
     def test_three_languages_and_monthly_reimport(self):
         csrf=self.login('judging')
         for language,word in [('de-CH','Übersicht'),('en','Overview'),('fr-CH','Vue d’ensemble')]:

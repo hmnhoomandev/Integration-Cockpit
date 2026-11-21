@@ -1,6 +1,6 @@
 """Server-rendered German, English and French interface."""
 from html import escape
-from urllib.parse import urlencode, quote
+from urllib.parse import urlencode, quote, parse_qs, urlsplit
 from itertools import chain
 
 from . import rules
@@ -125,6 +125,35 @@ COPY = {
  'cutoff_year':('Fristjahr','Deadline year','Année de l’échéance'),
  'observed_to_date':('Beobachtet bis zum Stichtag · Fristjahr','Observed through the snapshot · deadline year','Observé jusqu’à la date du rapport · année de l’échéance'),
  'analysis_note':('Zellen und Komplementärzellen unterhalb des Mindestwerts werden unterdrückt. Deskriptiv, nicht kausal.','Cells and complements below the minimum are suppressed. Results describe associations.','Les cellules et compléments sous le seuil sont masqués. Résultats descriptifs.'),
+ 'role_worker':('Fallführung','Caseworker','Gestionnaire de dossiers'),
+ 'role_manager':('Leitung','Management','Direction'),
+ 'role_importer':('Datenimport','Import operator','Opérateur d’importation'),
+ 'role_judge':('Demo-Konto','Demo account','Compte de démonstration'),
+ 'demo_persona':('Demo-Rolle','Demo role','Rôle de démonstration'),
+ 'apply_role':('Rolle anzeigen','View role','Afficher le rôle'),
+ 'skip_main':('Zum Inhalt','Skip to content','Aller au contenu'),
+ 'navigation':('Hauptnavigation','Main navigation','Navigation principale'),
+ 'trend':('Monatsvergleich A1','Monthly A1 trend','Tendance mensuelle A1'),
+ 'coverage_overview':('Quellenabdeckung','Source coverage','Couverture des sources'),
+ 'sources_present':('Erkannte Quelldateien','Recognized source workbooks','Classeurs source reconnus'),
+ 'nonempty_sources':('Quellen mit Datenzeilen','Sources containing data rows','Sources contenant des lignes de données'),
+ 'status_filter':('Ergebnisstatus','Result status','Statut du résultat'),
+ 'all_statuses':('Alle Status','All statuses','Tous les statuts'),
+ 'reset_filters':('Filter zurücksetzen','Reset filters','Réinitialiser les filtres'),
+ 'queue_count':('Passende Fälle','Matching cases','Dossiers correspondants'),
+ 'empty_queue':('Keine Fälle für diese Filter','No cases match these filters','Aucun dossier ne correspond à ces filtres'),
+ 'page_number':('Seite','Page','Page'),
+ 'back_queue':('Zur Fallführung','Back to casework','Retour au suivi des dossiers'),
+ 'date_until':('Bis','Until','Jusqu’au'),
+ 'sheet_metadata':('Metadaten','Metadata','Métadonnées'),
+ 'sheet_aggregates':('Aggregate','Aggregates','Agrégats'),
+ 'sheet_import':('Import','Import','Importation'),
+ 'sheet_sources':('Quellen','Sources','Sources'),
+ 'sheet_issues':('Fehler','Issues','Anomalies'),
+ 'ci_lower':('95%-KI Untergrenze','95% CI lower','Borne inférieure IC 95 %'),
+ 'ci_upper':('95%-KI Obergrenze','95% CI upper','Borne supérieure IC 95 %'),
+ 'confidence_interval':('95%-Konfidenzintervall','95% confidence interval','Intervalle de confiance à 95 %'),
+ 'case_identifier':('Fallkennung','Case ID','Identifiant du dossier'),
  'missing_source':('Pflichtdatei fehlt','Required workbook is missing','Classeur obligatoire manquant'),
  'unrecognized_or_invalid_workbook':('Datei ungültig oder doppelt','Invalid or duplicate workbook','Classeur invalide ou en double'),
  'invalid_worksheet_data':('Ungültige Tabelleninhalte','Invalid worksheet content','Contenu de feuille invalide'),
@@ -226,7 +255,7 @@ def badge(lang,state):
     return f'<span class="badge {esc(state)}"><i></i>{text(lang,state)}</span>'
 
 
-def layout(lang,active,body,account=None,csrf='',snapshot=None):
+def layout(lang,active,body,account=None,csrf='',snapshot=None,demo_switch=False,view_path=''):
     menus = ['overview','queue','reports','ai','forecast','intake']
     if account:
         if account['role']=='worker':
@@ -235,20 +264,29 @@ def layout(lang,active,body,account=None,csrf='',snapshot=None):
             menus = [m for m in menus if m not in ('queue','intake')]
         if account['role']=='importer':
             menus = ['reports','intake','ai']
-    nav = ''.join(f'<a href="/{key}" {"aria-current=page" if key==active else ""}>{text(lang,key)}</a>' for key in menus) if account else ''
-    language = ''.join(f'<a lang="{locale}" href="{href(f'/language/{locale}', view=active)}" {"aria-current=page" if i==lang else ""}>{locale[:2].upper()}</a>'
+    nav = ''.join(f'<a href="/{key}" {"aria-current=page" if key==active or key=="queue" and active=="case" else ""}>{text(lang,key)}</a>' for key in menus) if account else ''
+    target = urlsplit(view_path or '/'+active)
+    parameters = parse_qs(target.query)
+    filters = {k:parameters[k][0] for k in ('q','state','page','goal','factor','topic') if k in parameters}
+    language = ''.join(f'<a lang="{locale}" href="{href(f'/language/{locale}', view=target.path, **filters)}" {"aria-current=page" if i==lang else ""}>{locale[:2].upper()}</a>'
                        for i,locale in enumerate(LOCALES))
     date = f'<span class="snapshot">{text(lang,"snapshot")} <strong>{esc(snapshot["asof"])}</strong></span>' if snapshot else ''
     logout = post('/logout',csrf,action(lang,'logout')) if account else ''
-    frame = f'<aside><a class="brand" href="/"><span aria-hidden="true">✳</span><div>Integrations-Cockpit<small>Bern</small></div></a><nav>{nav}</nav><div class="aside-bottom">{text(lang,"demo")}</div></aside>' if account else ''
+    persona = ''
+    if demo_switch:
+        opts = ''.join(f'<option value="{key}" {"selected" if key==account["role"] else ""}>{text(lang,"role_"+key)}</option>'
+                       for key in ('judge','worker','manager','importer'))
+        persona = post('/demo-role',csrf,f'<label>{text(lang,"demo_persona")} <select name="role">{opts}</select></label>'+action(lang,'apply_role'))
+    role_label = f'<span class="role-label">{text(lang,"role_"+account["role"])}</span>' if account else ''
+    frame = f'<aside><a class="brand" href="/"><span aria-hidden="true">✳</span><div>Integrations-Cockpit<small>Bern</small></div></a><nav aria-label="{text(lang,"navigation")}">{nav}</nav><div class="aside-bottom">{role_label}{persona}</div></aside>' if account else ''
     mode = 'dashboard' if account else 'signin'
     return f'''<!doctype html><html lang="{LOCALES[lang]}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{text(lang,active)} · Integrations-Cockpit Bern</title><link rel="stylesheet" href="/static/app.css"></head>
-<body class="{mode}">{frame}<div class="workspace"><header>{date}<div class="header-actions"><div class="languages">{language}</div>{logout}</div></header>
-<main id="main">{body}<footer class="photo-credit">{'<a href="https://commons.wikimedia.org/wiki/File:Bern_Altstadt_von_Rosengarten_20211007.jpg">Bern · Daniel Kraft</a> · <a href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>' if active in ('overview','login') else ''}</footer></main></div></body></html>'''
+<body class="{mode}"><a class="skip-link" href="#main">{text(lang,"skip_main")}</a>{frame}<div class="workspace"><header>{date}<div class="header-actions"><div class="languages">{language}</div>{logout}</div></header>
+<main id="main" tabindex="-1">{body}<footer class="photo-credit">{'<a href="https://commons.wikimedia.org/wiki/File:Bern_Altstadt_von_Rosengarten_20211007.jpg">Bern · Daniel Kraft</a> · <a href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>' if active in ('overview','login') else ''}</footer></main></div></body></html>'''
 
 
-def overview(lang,snapshot,cases,management,dimension='year',intake_categories=None,goal_index=0):
+def overview(lang,snapshot,cases,management,dimension='year',intake_categories=None,goal_index=0,trend=()):
     s = rules.counts(cases,0)
     metrics = (('people',len(cases)),('homes',len({c['home'] for c in cases})),('met',s['achieved']),
                ('follow',sum(s[key] for key in ('risk','overdue','review'))))
@@ -271,7 +309,7 @@ def overview(lang,snapshot,cases,management,dimension='year',intake_categories=N
                                for i,k in enumerate(('a1','work','household')))
         comparator = max(public,key=lambda row:row[1],default=None)
         baseline = comparator[3]/comparator[1] if comparator else None
-        rendered = table([tr(lang,'category'),'n',tr(lang,'observed_rate'),tr(lang,'met'),'95% CI',tr(lang,'difference')],
+        rendered = table([tr(lang,'category'),'n',tr(lang,'observed_rate'),tr(lang,'met'),tr(lang,'confidence_interval'),tr(lang,'difference')],
           ((text(lang,label),esc(n) if n else text(lang,'suppressed'), f'{observed/n:.1%}' if n else '—',
             f'{k/n:.1%}' if n else '—',f'{band[0]:.0%}–{band[1]:.0%}' if band else '—',
             f'{(k/n-baseline)*100:+.1f} pp' if n else '—') for label,n,observed,k,band in breakdown))
@@ -286,9 +324,17 @@ def overview(lang,snapshot,cases,management,dimension='year',intake_categories=N
           ((esc(k),esc(len(items)),esc(sum(c['goals'][0]['state'] in ('risk','review','overdue') for c in items)),
           esc(sum(bool(c['gaps']) for c in items))) for k,items in sorted(workers.items()) if len(items)>=rules.MIN_GROUP))
         factor_panel = f'<section class="panel"><h2>{text(lang,"explorer")}</h2><p>{window} · {esc(snapshot["asof"])} · {text(lang,"upcoming_due")} {upcoming} · {text(lang,"missing")} {missing}</p><div class="chips">{goal_choices}</div><div class="chips">{choices}</div>{rendered}<p>{text(lang,"analysis_note")}</p><p>{text(lang,"source_limit")}</p><a class="button" href="{aggregates}">{text(lang,"safe_aggregates")}</a></section><section class="panel"><h2>{text(lang,"caseload")}</h2>{caseload}<p>{text(lang,"quality_note")}</p></section>'
+    import json
+    sources = json.loads(snapshot['inspected'])
+    coverage_card = f'<section class="panel"><h2>{text(lang,"coverage_overview")}</h2><dl><dt>{text(lang,"sources_present")}</dt><dd>{len(sources)}</dd><dt>{text(lang,"nonempty_sources")}</dt><dd>{sum(n>0 for n in sources.values())}</dd></dl><a href="/reports">{text(lang,"reports")}</a></section>'
+    trend_card = ''
+    if trend:
+        rows = ((esc(d),esc(n),esc(k),f'{k/n:.1%}' if n else text(lang,'suppressed')) for d,n,k in trend)
+        trend_card = f'<section class="panel"><h2>{text(lang,"trend")}</h2>'+table(
+            [tr(lang,'snapshot'),tr(lang,'scope_in'),tr(lang,'met'),'%'],rows)+'</section>'
     return f'''<section class="hero"><img class="bern-image" src="/static/bern.jpg" alt=""><div class="hero-copy"><p class="eyebrow">{text(lang,'demo' if snapshot['source']=='synthetic' else 'local')}</p>
 {heading(lang,'overview',text(lang,'lead'))}</div></section>
-<div class="kpis">{kpis}</div><h2>{text(lang,'goals')}</h2><div class="three">{''.join(goals)}</div>
+<div class="kpis">{kpis}</div><div class="two">{coverage_card}{trend_card}</div><h2>{text(lang,'goals')}</h2><div class="three">{''.join(goals)}</div>
 {factor_panel}'''
 
 
@@ -297,12 +343,12 @@ def analysis_export(lang,snapshot,cases,dimension,intake_categories,goal_index):
     asof = date.fromisoformat(snapshot['asof'])
     rows,coverage,_ = rules.analysis(cases,asof,dimension,intake_categories,goal_index)
     return {
-        'Metadata': [[tr(lang,'snapshot'),asof],[tr(lang,'source'),tr(lang,'demo')],
+        tr(lang,'sheet_metadata'): [[tr(lang,'snapshot'),asof],[tr(lang,'source'),tr(lang,'demo')],
                      [tr(lang,'goals'),tr(lang,('a1','work','household')[goal_index])],
                      [tr(lang,'category'),tr(lang,dimension if goal_index==0 else 'cutoff_year')],
                      [tr(lang,'upcoming_due'),coverage.get('upcoming')],[tr(lang,'missing'),coverage.get('missing')]],
-        'Aggregates': [[tr(lang,'category'),'n',tr(lang,'a1_attainment') if goal_index==0 else tr(lang,'attained'),
-                       tr(lang,'met'),'95% CI lower','95% CI upper']] +
+        tr(lang,'sheet_aggregates'): [[tr(lang,'category'),'n',tr(lang,'a1_attainment') if goal_index==0 else tr(lang,'attained'),
+                       tr(lang,'met'),tr(lang,'ci_lower'),tr(lang,'ci_upper')]] +
                       [[tr(lang,label),n,observed,k,*(band or (None,None))] for label,n,observed,k,band in rows],
     }
 
@@ -315,7 +361,7 @@ def queue(lang,cases,query,page,filter_state):
     offset = (page-1)*20
     options = ''.join(f'<option value="{key}" {"selected" if key==filter_state else ""}>{text(lang,key)}</option>' for key in limits)
     form = f'''<form class="inline" action="/queue"><label>{text(lang,'search')} <input name="q" value="{esc(query)}"></label>
-<label>{text(lang,'a1')} <select name="state"><option value="">—</option>{options}</select></label>{action(lang,'search')}</form>'''
+<label>{text(lang,'status_filter')} · {text(lang,'a1')} <select name="state"><option value="">{text(lang,'all_statuses')}</option>{options}</select></label>{action(lang,'search')}<a class="chip" href="/queue">{text(lang,'reset_filters')}</a></form>'''
     rows = ((f'<a class="case-link" href="/case/{quote(c["id"],safe="")}">{esc(c["id"])}</a>',
              *(badge(lang,g['state']) for g in c['goals']),esc(c['goals'][0]['deadline']),text(lang,c['goals'][0]['reason']))
             for c in cases[offset:offset+20])
@@ -324,7 +370,10 @@ def queue(lang,cases,query,page,filter_state):
         pagination += f'<a href="{href("/queue",q=query,state=filter_state,page=page-1)}">{text(lang,"previous")}</a>'
     if offset+20<len(cases):
         pagination += f'<a href="{href("/queue",q=query,state=filter_state,page=page+1)}">{text(lang,"next")}</a>'
-    return heading(lang,'queue')+form+table(['ID',*(tr(lang,k) for k in ('a1','work','household','deadline','reason'))],rows)+pagination+'</div>'
+    count = f'<p class="result-count">{text(lang,"queue_count")} · {len(cases)} · {text(lang,"page_number")} {page}</p>'
+    if not cases[offset:offset+20]:
+        return heading(lang,'queue')+form+count+f'<section class="panel"><p>{text(lang,"empty_queue")}</p></section>'+pagination+'</div>'
+    return heading(lang,'queue')+form+count+table([tr(lang,'case_identifier'),*(tr(lang,k) for k in ('a1','work','household','deadline','reason'))],rows)+pagination+'</div>'
 
 
 def detail(lang,case):
@@ -355,9 +404,9 @@ def detail(lang,case):
         ('status','case','Verfahrensstand Gültig ab','Verfahrensstand Gültig bis','Verfahrensstand')):
         for record in case['tables'][dataset][:20]:
             timeline.append((record.get(start) or '',record.get(end),label,record.get(fact)))
-    rows = table([tr(lang,'source'),tr(lang,'category'),tr(lang,'deadline'),'↔'],
+    rows = table([tr(lang,'source'),tr(lang,'category'),tr(lang,'deadline'),tr(lang,'date_until')],
         ((text(lang,label),esc(value),esc(a),esc(b)) for a,b,label,value in sorted(timeline,key=lambda row:row[0],reverse=True)))
-    return heading(lang,'case',esc(case['id']))+'<div class="three">'+''.join(sections)+f'</div><section class="panel"><h2>{text(lang,"timeline")}</h2>{rows}</section>'
+    return heading(lang,'case',esc(case['id']))+f'<a class="chip back-link" href="/queue">{text(lang,"back_queue")}</a><div class="three">'+''.join(sections)+f'</div><section class="panel"><h2>{text(lang,"timeline")}</h2>{rows}</section>'
 
 
 
@@ -400,13 +449,13 @@ def quality_export(lang,snapshot,diagnostic,issues,counts,manifest):
     status = {'accepted':'uploaded','repeated':'repeated','rejected':'rejected'}
     hashes = {r['dataset']:r['sha256'] for r in manifest}
     return {
-        'Import': [[tr(lang,'snapshot'),snapshot['asof'] if snapshot else None],
+        tr(lang,'sheet_import'): [[tr(lang,'snapshot'),snapshot['asof'] if snapshot else None],
                    [tr(lang,'source'),tr(lang,'demo' if snapshot['source']=='synthetic' else 'local') if snapshot else None],
                    [tr(lang,'import_attempt'),diagnostic['report_date'] if diagnostic else None],
                    [tr(lang,'result'),tr(lang,status[diagnostic['outcome']]) if diagnostic else None]],
-        'Sources': [[tr(lang,'source'),tr(lang,'rows'),tr(lang,'fingerprint')]] +
+        tr(lang,'sheet_sources'): [[tr(lang,'source'),tr(lang,'rows'),tr(lang,'fingerprint')]] +
                    [[k,n,hashes.get(k)] for k,n in counts.items()],
-        'Issues': [[tr(lang,'source'),tr(lang,'row_number'),tr(lang,'result'),'Code']] +
+        tr(lang,'sheet_issues'): [[tr(lang,'source'),tr(lang,'row_number'),tr(lang,'result'),'Code']] +
                   [[key,line,tr(lang,reason),reason] for key,line,reason in issues],
     }
 

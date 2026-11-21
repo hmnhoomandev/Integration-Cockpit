@@ -107,3 +107,18 @@ dd { margin: .3rem 0 .75rem; overflow-wrap: anywhere; }
 .hero::before, .login-hero::before { content: ""; position: absolute; inset: 0; z-index: -2; }
 .hero::before { background: linear-gradient(90deg,#102f27fa 5%,#102f27bb 48%,#102f2728); }
 .login-hero::before { background: linear-gradient(0deg,#102f27fc 8%,#102f27b4 48%,#102f2740); }
+
+.skip-link { position: fixed; top: .5rem; left: .5rem; z-index: 5; padding: .7rem; background: #fff; border-radius: 6px; }
+.skip-link:not(:focus) { clip-path: inset(50%); }
+.role-label { display: block; margin: 0 0 .7rem; }
+.aside-bottom form { align-items: stretch; flex-direction: column; }
+.aside-bottom button { border-color: #a3c5ab; justify-content: center; }
+.chips { flex-wrap: wrap; }
+.result-count { margin: .2rem 0 .8rem; color: var(--muted); }
+.back-link { margin-bottom: 1rem; }
+details { margin-top: .7rem; }
+@media (max-width: 690px) {
+  .aside-bottom { display: block; margin: .6rem 0 0; }
+  .aside-bottom form { flex-direction: row; align-items: end; }
+  header { flex-wrap: wrap; }
+}

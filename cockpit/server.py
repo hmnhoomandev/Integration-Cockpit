@@ -11,7 +11,7 @@ from http.cookies import SimpleCookie, CookieError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock
-from urllib.parse import parse_qs, urlsplit, unquote
+from urllib.parse import parse_qs, urlsplit, unquote, urlencode
 from zipfile import BadZipFile
 from xml.etree.ElementTree import ParseError
 import os
@@ -105,7 +105,8 @@ class Handler(BaseHTTPRequestHandler):
         self.respond(303,headers=[('Location',path),*headers])
 
     def page(self,key,body,status=200,headers=()):
-        self.respond(status,ui.layout(self.lang,key,body,self.identity,self.csrf,self.snapshot),headers=headers)
+        self.respond(status,ui.layout(self.lang,key,body,self.identity,self.csrf,self.snapshot,
+                                      getattr(self,'demo_switch',False),getattr(self,'view_path','')),headers=headers)
 
     def form(self,limit):
         size = int(self.headers.get('Content-Length','0'))
@@ -159,13 +160,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(200,asset.read_bytes(),'text/css' if path.endswith('css') else 'image/jpeg')
             return self.respond(404)
         if not post and path.startswith('/language/') and path.split('/')[-1] in ui.LOCALES:
-            # Restrict redirects to the four dashboard routes and sign-in.
-            previous = '/'+parse_qs(url.query).get('view',[''])[0]
-            if previous=='/case':
-                previous='/queue'
-            if previous not in ('/login','/overview','/queue','/reports','/ai','/forecast','/intake') and not re.fullmatch(r'/case/DEMO-[0-9]{5,}',previous):
-                previous = '/'
-            return self.redirect(previous,[('Set-Cookie',self.cookie('locale',path.split('/')[-1],31536000))])
+            try:
+                values = parse_qs(url.query,max_num_fields=8)
+            except ValueError:
+                return self.respond(400)
+            view = '/'+values.get('view',[''])[0].lstrip('/')
+            if view=='/case':
+                view='/queue'
+            routes = {'/login','/overview','/queue','/reports','/ai','/forecast','/intake'}
+            if view not in routes and not re.fullmatch(r'/case/[A-Za-z0-9._~%\-]{1,180}',view):
+                view = '/'
+            filters = {key:values[key][0][:64] for key in ('q','state','page','goal','factor','topic') if key in values}
+            return self.redirect(view+('?' + urlencode(filters) if filters else ''),
+                                 [('Set-Cookie',self.cookie('locale',path.split('/')[-1],31536000))])
+        self.view_path = self.path if not post else path
+        self.demo_switch = False
         db = data.connect(self.server.path)
         try:
             token = cookie_value('sid')
@@ -179,6 +188,28 @@ class Handler(BaseHTTPRequestHandler):
             auth = self.identity
             self.csrf = auth['csrf']
             role = auth['role']
+            self.demo_switch = self.server.hosted and role=='judge'
+            if self.demo_switch:
+                if path=='/demo-role' and post:
+                    fields,_ = self.form(8192)
+                    if not compare_digest(fields.get('csrf','').encode(),self.csrf.encode()):
+                        return self.respond(403)
+                    selected_role = fields.get('role')
+                    if selected_role not in ('judge','worker','manager','importer'):
+                        return self.respond(400)
+                    with db:
+                        if selected_role=='judge':
+                            db.execute('DELETE FROM demo_roles WHERE session=?',(digest(token),))
+                        else:
+                            db.execute('INSERT INTO demo_roles VALUES(?,?) ON CONFLICT(session) DO UPDATE SET role=excluded.role',
+                                       (digest(token),selected_role))
+                    return self.redirect('/reports' if selected_role=='importer' else '/overview')
+                persona = db.execute('SELECT role FROM demo_roles WHERE session=?',(digest(token),)).fetchone()
+                if persona:
+                    role = persona['role']
+                    auth = dict(auth)
+                    auth.update(role=role,assignment='A' if role=='worker' else '')
+                    self.identity = auth
             if path in ('/','/login') and not post:
                 return self.redirect('/reports' if role=='importer' else '/overview')
             allowed = {
@@ -260,7 +291,8 @@ class Handler(BaseHTTPRequestHandler):
                     tabs = ui.analysis_export(self.lang,self.snapshot,cases,dimension,intake_categories,goal)
                     return self.respond(200,xlsx.write(tabs),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                                         [('Content-Disposition','attachment; filename="safe-aggregates.xlsx"')])
-                return self.page(route,ui.overview(self.lang,self.snapshot,cases,role=='manager',dimension,intake_categories,goal))
+                trend = self.monthly_trend(db,role,auth['assignment']) if self.snapshot['source']=='synthetic' else ()
+                return self.page(route,ui.overview(self.lang,self.snapshot,cases,role=='manager',dimension,intake_categories,goal,trend))
             if route=='queue':
                 return self.page(route,ui.queue(self.lang,cases,query.get('q','')[:64],max(1,int(query.get('page','1'))),query.get('state','')))
             if route=='case':
@@ -289,6 +321,23 @@ class Handler(BaseHTTPRequestHandler):
             return self.page('review',ui.heading(self.lang,'review'),400)
         finally:
             db.close()
+
+    def monthly_trend(self,db,role,assignment):
+        rows = db.execute('SELECT MAX(id) AS id FROM snapshots WHERE source="synthetic" AND asof IN (?,?) '
+                          'GROUP BY asof ORDER BY asof',data.MONTHS).fetchall()
+        trend = []
+        for row in rows:
+            snapshot,tables = data.get_snapshot(db,row['id'])
+            cases = rules.evaluate(snapshot,tables)
+            if role=='worker':
+                cases = [c for c in cases if c['worker']==assignment]
+            metrics = rules.a1_totals(cases)
+            eligible,on_time = metrics[1],metrics[8]
+            if role=='manager' and min(on_time,eligible-on_time)<rules.MIN_GROUP:
+                eligible = on_time = None
+            trend.append((snapshot['asof'],eligible,on_time))
+        return trend
+
 
     def signin(self,db,post,csrf):
         if not post:
