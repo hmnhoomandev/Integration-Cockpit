@@ -602,8 +602,8 @@ def main():
             if not db.execute('SELECT 1 FROM accounts').fetchone():
                 parser.error('Provision a staff account with the account command first')
             db.close()
-            print(f'Listening on {args.bind}:{args.port}',flush=True)
             with App((args.bind,args.port),path,args.hosted) as server:
+                print(f'Listening on {args.bind}:{server.server_port}',flush=True)
                 try:
                     server.serve_forever()
                 except KeyboardInterrupt:

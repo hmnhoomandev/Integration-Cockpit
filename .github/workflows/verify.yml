@@ -37,6 +37,10 @@ jobs:
           docker run -d --name cockpit-ci -p 127.0.0.1:8080:8080 --env "COCKPIT_PASSWORD=$password" \
             --entrypoint sh integration-cockpit:ci -c 'python -m cockpit.server account ci-judge judge && unset COCKPIT_PASSWORD && exec python -m cockpit.server serve --hosted --bind 0.0.0.0 --port 8080'
           trap 'docker rm -f cockpit-ci >/dev/null' EXIT
-          curl --retry 20 --retry-connrefused --retry-delay 1 --fail --silent http://127.0.0.1:8080/health | grep -Fx ok
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8080/health | grep -Fx ok; then break; fi
+            if [ "$attempt" -eq 30 ]; then docker logs cockpit-ci; exit 1; fi
+            sleep 1
+          done
           test "$(curl --silent --output /dev/null --write-out "%{http_code}" http://127.0.0.1:8080/export)" = 303
           docker exec cockpit-ci python -c 'from pathlib import Path; from cockpit.intake import suggest; result = suggest(Path("cockpit/synthetic-intake.pdf").read_bytes(), {"SYN-Z00001":"DEMO-00001"}); assert result["mode"] == "review" and result["suggestions"] == ["scheduling"]'
