@@ -182,16 +182,16 @@ class Handler(BaseHTTPRequestHandler):
             if path in ('/','/login') and not post:
                 return self.redirect('/reports' if role=='importer' else '/overview')
             allowed = {
-              'judge':{'overview','queue','case','reports','export','ai','forecast','forecast-upload','forecast-reset','intake','intake-save','seed','seed-invalid','quality','snapshot','import','logout'},
-              'worker':{'overview','queue','case','reports','export','ai','intake','intake-save','snapshot','logout'},
-              'manager':{'overview','reports','export','ai','forecast','forecast-upload','forecast-reset','snapshot','logout'},
-              'importer':{'reports','intake','intake-save','ai','seed','seed-invalid','quality','snapshot','import','logout'},
+              'judge':{'overview','queue','case','reports','export','ai','forecast','forecast-upload','forecast-reset','intake','intake-save','intake-demo','seed','seed-invalid','quality','snapshot','import','analysis-export','logout'},
+              'worker':{'overview','queue','case','reports','export','ai','intake','intake-save','intake-demo','snapshot','analysis-export','logout'},
+              'manager':{'overview','reports','export','ai','forecast','forecast-upload','forecast-reset','snapshot','analysis-export','logout'},
+              'importer':{'reports','intake','intake-save','intake-demo','ai','seed','seed-invalid','quality','snapshot','import','analysis-export','logout'},
             }
             route = path.split('/')[1]
             if route not in allowed[role] or (self.server.hosted and
-                    (route in ('import','forecast-upload','forecast-reset','intake-save') or (route=='intake' and post))):
+                    (route in ('import','forecast-upload','forecast-reset') or (route=='intake' and post))):
                 return self.page('no_access',ui.heading(self.lang,'no_access'),403)
-            mutations = {'logout','seed','seed-invalid','snapshot','import','intake-save','forecast-upload','forecast-reset'}
+            mutations = {'logout','seed','seed-invalid','snapshot','import','intake-save','forecast-upload','forecast-reset','intake-demo'}
             if (route in mutations and not post) or (post and route not in mutations|{'intake'}):
                 return self.respond(405)
             query = {k:v[0] for k,v in parse_qs(url.query,max_num_fields=15).items()}
@@ -236,12 +236,31 @@ class Handler(BaseHTTPRequestHandler):
             cases = rules.evaluate(self.snapshot,tables) if role!='importer' else []
             if role=='worker':
                 cases = [c for c in cases if c['worker']==auth['assignment']]
-            if route=='overview':
-                dimension = query.get('factor','age')
+            if route in ('overview','analysis-export'):
+                dimension = query.get('factor','year')
+                if dimension not in rules.FACTOR_DIMENSIONS:
+                    dimension = 'year'
+                goal = int(query.get('goal','0'))
+                if goal not in (0,1,2):
+                    raise ValueError('invalid_metric')
                 intake_categories = {}
                 if dimension=='intake' and self.snapshot['source']=='synthetic':
-                    intake_categories = dict(db.execute('SELECT person,category FROM intake WHERE snapshot=?',(self.snapshot['id'],)))
-                return self.page(route,ui.overview(self.lang,self.snapshot,cases,role=='manager',dimension,intake_categories))
+                    if self.snapshot['asof']==data.PHASE5_MONTH:
+                        intake_categories.update(data.phase5_categories(cases))
+                    if self.server.hosted:
+                        approved = db.execute('SELECT category FROM intake_demo WHERE session=? AND snapshot=?',
+                                              (digest(token),self.snapshot['id'])).fetchone()
+                        if approved:
+                            intake_categories['DEMO-00001'] = approved['category']
+                    else:
+                        intake_categories.update(db.execute('SELECT person,category FROM intake WHERE snapshot=?',(self.snapshot['id'],)))
+                if route=='analysis-export':
+                    if self.snapshot['source']!='synthetic' or role=='importer':
+                        return self.respond(403)
+                    tabs = ui.analysis_export(self.lang,self.snapshot,cases,dimension,intake_categories,goal)
+                    return self.respond(200,xlsx.write(tabs),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                        [('Content-Disposition','attachment; filename="safe-aggregates.xlsx"')])
+                return self.page(route,ui.overview(self.lang,self.snapshot,cases,role=='manager',dimension,intake_categories,goal))
             if route=='queue':
                 return self.page(route,ui.queue(self.lang,cases,query.get('q','')[:64],max(1,int(query.get('page','1'))),query.get('state','')))
             if route=='case':
@@ -263,8 +282,8 @@ class Handler(BaseHTTPRequestHandler):
                 report = insights.backtest([r[1] for r in series] if series else None)
                 return self.page(route,ui.forecast(self.lang,report,min(100000,max(0,int(query.get('rate','0')))),cases,
                                                    series,not self.server.hosted,self.csrf))
-            if route in ('intake','intake-save'):
-                return self.intake(db,route,post,fields if post else {},files if post else [],tables,cases)
+            if route in ('intake','intake-save','intake-demo'):
+                return self.intake(db,route,post,fields if post else {},files if post else [],tables,cases,digest(token))
             return self.respond(404)
         except (ValueError, OverflowError, BadZipFile, ParseError, KeyError, IndexError):
             return self.page('review',ui.heading(self.lang,'review'),400)
@@ -322,7 +341,7 @@ class Handler(BaseHTTPRequestHandler):
     def import_snapshot(self,db,route,token,fields,files):
         report = fields.get('date','')
         if route in ('seed','seed-invalid'):
-            if report not in (*data.MONTHS,data.PHASE4_MONTH):
+            if report not in (*data.MONTHS,data.PHASE4_MONTH,data.PHASE5_MONTH):
                 raise ValueError('invalid_month')
             books = data.seed(report)
             if route=='seed-invalid':
@@ -354,7 +373,7 @@ class Handler(BaseHTTPRequestHandler):
         self.select(db,token,selected)
         return self.redirect('/reports?notice='+('repeated' if status=='repeated' else 'uploaded'))
 
-    def intake(self,db,route,post,fields,files,tables,cases):
+    def intake(self,db,route,post,fields,files,tables,cases,session):
         lang = self.lang
         esc = ui.esc
         text = ui.text
@@ -364,23 +383,30 @@ class Handler(BaseHTTPRequestHandler):
             authorized = {r['_person'] for r in tables['clients']}
         num_to_person = {r['Zemis Nummer']:r['_person'] for r in tables['clients'] if r['_person'] in authorized}
         if route=='intake-save':
-            pid = fields.get('person')
+            pid = fields.get('person') or num_to_person.get(fields.get('zemis','').strip())
             category = fields.get('category')
             if pid not in authorized or category not in insights.CATEGORIES:
                 raise ValueError('invalid_approval')
             with db:
-                db.execute('INSERT INTO intake VALUES(?,?,?) ON CONFLICT(snapshot,person) DO UPDATE SET category=excluded.category',
-                           (self.snapshot['id'],pid,category))
+                if self.server.hosted:
+                    if pid!='DEMO-00001' or self.snapshot['source']!='synthetic':
+                        return self.respond(403)
+                    db.execute('INSERT INTO intake_demo VALUES(?,?,?) ON CONFLICT(session,snapshot) DO UPDATE SET category=excluded.category',
+                               (session,self.snapshot['id'],category))
+                else:
+                    db.execute('INSERT INTO intake VALUES(?,?,?) ON CONFLICT(snapshot,person) DO UPDATE SET category=excluded.category',
+                               (self.snapshot['id'],pid,category))
                 db.execute('INSERT INTO audit VALUES(datetime("now"),?,?)',('intake_review','accepted'))
             return self.redirect('/intake')
-        if self.server.hosted:
-            result = insights.gateway(insights.IntakeQuestion('scheduling'))
-            return self.page('intake',ui.heading(lang,'intake')+f'<section class="panel"><p>{text(lang,"synthetic_only")}</p><p>{text(lang,result["category"])}</p></section>')
         feedback = ''
         if post:
-            if len(files)!=1 or files[0][0]!='report':
+            if route=='intake-demo' and not files:
+                blob = Path(__file__).with_name('synthetic-intake.pdf').read_bytes()
+            elif not self.server.hosted and len(files)==1 and files[0][0]=='report':
+                blob = files[0][1]
+            else:
                 raise ValueError('expected_pdf')
-            result = intake.suggest(files[0][1],num_to_person)
+            result = intake.suggest(blob,num_to_person)
             if result['mode']=='review':
                 options = ''.join(f'<option value="{key}" {"selected" if key in result["suggestions"] else ""}>{text(lang,key)}</option>'
                                   for key in insights.CATEGORIES)
@@ -390,13 +416,25 @@ class Handler(BaseHTTPRequestHandler):
                     f'<label>{text(lang,"category")} <select name="category">{options}</select></label>'+ui.action(lang,'review_save'))
             else:
                 feedback = f'<p role="status">{text(lang,"manual")}</p>'
+        sample = ui.post('/intake-demo',self.csrf,ui.action(lang,'intake_sample'))
+        if self.server.hosted:
+            saved = db.execute('SELECT category FROM intake_demo WHERE session=? AND snapshot=?',
+                               (session,self.snapshot['id'])).fetchone()
+            approval = f'<p>{text(lang,"reviewed_intake")} · {text(lang,saved["category"])}</p>' if saved else ''
+            return self.page('intake',ui.heading(lang,'intake')+
+                             f'<section class="panel"><p>{text(lang,"synthetic_only")}</p>{sample}{feedback}{approval}</section>')
         saved = list(db.execute('SELECT person,category FROM intake WHERE snapshot=?',(self.snapshot['id'],)))
         if role=='importer':
             approvals = f'<p>{text(lang,"rows")} {len(saved)}</p>'
         else:
             approvals = ui.table(['ID',ui.tr(lang,'category')],((esc(r['person']),text(lang,r['category'])) for r in saved if r['person'] in authorized))
         form = ui.post('/intake',self.csrf,'<label>PDF <input type="file" name="report" accept=".pdf" required></label>'+ui.action(lang,'pdf_review'),True)
-        return self.page('intake',ui.heading(lang,'intake')+f'<section class="panel">{form}{feedback}{approvals}</section>')
+        manual_options = ''.join(f'<option value="{k}">{text(lang,k)}</option>' for k in insights.CATEGORIES)
+        manual = ui.post('/intake-save',self.csrf,
+            f'<label>ZEMIS <input name="zemis" required></label><label>{text(lang,"category")} '
+            f'<select name="category">{manual_options}</select></label>'+ui.action(lang,'review_save'))
+        return self.page('intake',ui.heading(lang,'intake')+
+                         f'<section class="panel">{form}{sample}{feedback}{approvals}<details><summary>{text(lang,"manual")}</summary>{manual}</details></section>')
 
 
 def main():

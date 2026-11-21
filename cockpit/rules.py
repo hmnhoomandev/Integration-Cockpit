@@ -45,7 +45,7 @@ RESPONSIBILITY_POLICY = load_responsibility_policy(os.getenv('COCKPIT_RESPONSIBI
 WORK_GOAL = 'Aufnahme Ausbildung / Erwerbstätigkeit'
 HOUSEHOLD_GOAL = 'Finanzielle Unabhängigkeit'
 APPLICATION_EVENTS = {'Asylgesuch in CH (Bund direkt, Kat. I)','Asylgesuch in CH (Kt normal, Kat. III)'}
-MIN_GROUP = 8
+MIN_GROUP = max(3,int(os.getenv('COCKPIT_MIN_GROUP','8')))
 DAY = timedelta(days=1)
 
 
@@ -304,7 +304,7 @@ def evaluate(snapshot, rows):
             if a and a<=snapshot['asof'] and not any(w.get('Von') and w['Von']<=b and (w.get('Bis') or '9999')>=a for w in tables['work']):
                 gaps.append(z['_line'])
         cases.append(dict(id=pid,worker=person.get('Fallführung') or '–',home=home,entry=entry,age=age,
-            status=status,school_years=person.get('Schuljahre vor Einreise'),goals=(language,employment,financial),tables=tables,gaps=gaps,end=end,
+            status=status,school_years=person.get('Schuljahre vor Einreise'),mother_tongue=person.get('Muttersprache'),goals=(language,employment,financial),tables=tables,gaps=gaps,end=end,
             reference_end=reference_end,transition_end=transition_end))
     return cases
 
@@ -347,45 +347,96 @@ def counts(cases, goal):
     return Counter(case['goals'][goal]['state'] for case in cases)
 
 
-def factors(cases, asof, dimension, intake_categories=None):
-    """Fixed synthetic partitions restricted to complete A1 follow-up."""
+FACTOR_DIMENSIONS = ('year','age','schooling','language_group','course','intake')
+
+
+def wilson(k,n):
+    rate = k/n
+    z = 1.96
+    d = 1+z*z/n
+    mid = (rate+z*z/(2*n))/d
+    radius = z*sqrt((rate*(1-rate)+z*z/(4*n))/n)/d
+    return max(0,mid-radius),min(1,mid+radius)
+
+
+def factor_group(case, dimension, goal, intake_categories):
+    if dimension=='year':
+        return case['entry'].year if case['entry'] else None
+    if dimension=='schooling':
+        value = case.get('school_years')
+        return ('0–8' if value<=8 else '9+') if isinstance(value,(int,float)) else None
+    if dimension=='intake':
+        value = (intake_categories or {}).get(case['id'])
+        return value or None
+    if dimension=='language_group':
+        value = case.get('mother_tongue')
+        if not value:
+            return None
+        return value if value in {'Arabisch','Tigrinya','Dari','Deutsch','Französisch'} else 'other_language'
+    if dimension=='course':
+        eligible = [row for row in case['tables']['education']
+                    if row.get('Art') in ('Förderangebot Sprache','Sprachkurs im erweiterten Verfahren (N)')]
+        if any(not row.get('Start') for row in eligible):
+            return None
+        return 'course_yes' if any(r['Start']<=goal['deadline'].isoformat() for r in eligible) else 'course_none'
+    age = case.get('age')
+    return ('16–29' if age<30 else '30–44' if age<45 else '45+') if age is not None else None
+
+
+def suppress_partition(groups):
+    # Suppress sparse numerators and complements, plus a second row if exactly one is suppressed.
+    suppressed = {label for label,states in groups.items()
+                  if min(len(states),*(sum(state in positive for state in states)
+                     for positive in ({'achieved'},{'achieved','late'},{'late','overdue','risk','ontrack'},
+                                      {'overdue','risk','ontrack'}))) < MIN_GROUP}
+    if len(suppressed)==1:
+        alternatives = [(len(states),str(label),label) for label,states in groups.items() if label not in suppressed]
+        if alternatives:
+            suppressed.add(min(alternatives)[2])
+    return suppressed
+
+
+def analysis(cases,asof,dimension='year',intake_categories=None,goal_index=0):
+    """Fixed partitions. The A1 denominator uses completed follow-up; G2/3 are observed-to-date."""
     groups = defaultdict(list)
-    unknown = 0
-    eligible = 0
+    coverage = Counter()
+    if goal_index==2:
+        cases = {c['home']:c for c in cases if c['goals'][2]['state']!='na'}.values()
     for case in cases:
-        goal = case['goals'][0]
-        if goal['state']=='na' or not goal['deadline'] or goal['deadline']>asof:
+        goal = case['goals'][goal_index]
+        if goal['state']=='na':
             continue
-        eligible += 1
+        if not goal['deadline']:
+            coverage['missing'] += 1
+            continue
+        if goal['deadline']>asof:
+            coverage['upcoming'] += 1
+            if goal_index==0:
+                continue
         if goal['state']=='review':
-            unknown += 1
+            coverage['missing'] += 1
             continue
-        if dimension=='schooling':
-            value = case.get('school_years')
-            group = '0–8' if isinstance(value,(int,float)) and value<=8 else '9+' if isinstance(value,(int,float)) else None
-        elif dimension=='intake':
-            group = (intake_categories or {}).get(case['id'])
-        elif dimension=='course':
-            group = 'course_yes' if any(r.get('Art') in ('Förderangebot Sprache','Sprachkurs im erweiterten Verfahren (N)') and r.get('Start')
-                      and r['Start']<=goal['deadline'].isoformat() for r in case['tables']['education']) else 'course_none'
-        else:
-            age = case.get('age')
-            group = ('16–29' if age<30 else '30–44' if age<45 else '45+') if age is not None else None
+        group = factor_group(case,dimension,goal,intake_categories) if goal_index==0 else goal['deadline'].year
         if group is None:
-            unknown += 1
+            coverage['missing'] += 1
             continue
-        groups[group].append(goal['state']=='achieved')
-    results = []
-    for label,outcomes in sorted(groups.items()):
-        n = len(outcomes)
-        k = sum(outcomes)
-        if min(n,k,n-k)<MIN_GROUP:
-            results.append((label,None,None,None))
+        groups[group].append(goal['state'])
+    suppressed = suppress_partition(groups)
+    rows = []
+    for label,states in sorted(groups.items()):
+        if label in suppressed:
+            rows.append((label,None,None,None,None))
             continue
-        rate = k/n
-        z = 1.96
-        d = 1+z*z/n
-        mid = (rate+z*z/(2*n))/d
-        radius = z*sqrt((rate*(1-rate)+z*z/(4*n))/n)/d
-        results.append((label,n,k,(mid-radius,mid+radius)))
-    return results,eligible,unknown
+        n = len(states)
+        ontime = states.count('achieved')
+        observed = ontime+states.count('late')
+        rows.append((label,n,observed,ontime,wilson(ontime,n)))
+    public = [r for r in rows if r[1] is not None]
+    # Coverage bins are also subject to minimum-cell checks.
+    protected = {key:(value if value>=MIN_GROUP else None) for key,value in coverage.items()}
+    return rows,protected,public
+
+
+def factors(cases,asof,dimension,intake_categories=None):
+    rows,coverage,_ = analysis(cases,asof,dimension,intake_categories)
+    return [(label,n,k,band) for label,n,_,k,band in rows],sum(row[1] or 0 for row in rows),coverage.get('missing')

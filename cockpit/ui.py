@@ -4,7 +4,7 @@ from urllib.parse import urlencode, quote
 from itertools import chain
 
 from . import rules
-from .data import MONTHS, PHASE4_MONTH
+from .data import MONTHS, PHASE4_MONTH, PHASE5_MONTH
 from .insights import SOURCES, FSO
 
 LOCALES = ('de-CH','en','fr-CH')
@@ -113,7 +113,18 @@ COPY = {
  'baseline_end':('Exportiertes Zuständigkeitsende','Exported responsibility end','Fin de prise en charge exportée'),
  'reference_end':('Rechnerische Referenzfrist','Calculated reference cutoff','Échéance de référence calculée'),
  'transition_end':('Kandidatenfrist 2027','Candidate 2027 cutoff','Échéance envisagée pour 2027'),
+ 'phase5_fixture':('Testmonat für Gruppenanalyse','Group analysis test month','Mois de test des analyses de groupe'),
  'phase4_fixture':('Testmonat für Arbeit und Haushalt','Work and household test month','Mois de test travail et ménage'),
+ 'language_group':('Erstsprache','Mother tongue','Langue première'),
+ 'other_language':('Weitere Sprachen','Other languages','Autres langues'),
+ 'intake_sample':('Synthetisches PDF prüfen','Review synthetic PDF','Examiner le PDF synthétique'),
+ 'reviewed_intake':('Bestätigte Kategorie','Confirmed category','Catégorie confirmée'),
+ 'safe_aggregates':('Geschützte Aggregate herunterladen','Download safe aggregates','Télécharger les agrégats protégés'),
+ 'observed_rate':('Beobachtete Quote','Observed attainment rate','Taux d’atteinte observé'),
+ 'difference':('Differenz zum grössten angezeigten Segment','Difference from largest displayed group','Écart avec le plus grand groupe affiché'),
+ 'cutoff_year':('Fristjahr','Deadline year','Année de l’échéance'),
+ 'observed_to_date':('Beobachtet bis zum Stichtag · Fristjahr','Observed through the snapshot · deadline year','Observé jusqu’à la date du rapport · année de l’échéance'),
+ 'analysis_note':('Zellen und Komplementärzellen unterhalb des Mindestwerts werden unterdrückt. Deskriptiv, nicht kausal.','Cells and complements below the minimum are suppressed. Results describe associations.','Les cellules et compléments sous le seuil sont masqués. Résultats descriptifs.'),
  'missing_source':('Pflichtdatei fehlt','Required workbook is missing','Classeur obligatoire manquant'),
  'unrecognized_or_invalid_workbook':('Datei ungültig oder doppelt','Invalid or duplicate workbook','Classeur invalide ou en double'),
  'invalid_worksheet_data':('Ungültige Tabelleninhalte','Invalid worksheet content','Contenu de feuille invalide'),
@@ -237,7 +248,7 @@ def layout(lang,active,body,account=None,csrf='',snapshot=None):
 <main id="main">{body}<footer class="photo-credit">{'<a href="https://commons.wikimedia.org/wiki/File:Bern_Altstadt_von_Rosengarten_20211007.jpg">Bern · Daniel Kraft</a> · <a href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>' if active in ('overview','login') else ''}</footer></main></div></body></html>'''
 
 
-def overview(lang,snapshot,cases,management,dimension='age',intake_categories=None):
+def overview(lang,snapshot,cases,management,dimension='year',intake_categories=None,goal_index=0):
     s = rules.counts(cases,0)
     metrics = (('people',len(cases)),('homes',len({c['home'] for c in cases})),('met',s['achieved']),
                ('follow',sum(s[key] for key in ('risk','overdue','review'))))
@@ -250,28 +261,50 @@ def overview(lang,snapshot,cases,management,dimension='age',intake_categories=No
         statuses = [(state,count) for state,count in totals.most_common() if snapshot['source']=='synthetic' or not management]
         rows = ''.join(f'<li>{badge(lang,state)}<strong>{count}</strong></li>' for state,count in statuses)
         goals.append(f'<article class="panel"><h3>{text(lang,key)}</h3><ul class="breakdown">{rows}</ul></article>')
-    groups = rules.group_metrics(cases) if snapshot['source']=='synthetic' or not management else []
-    group_html = table([tr(lang,'year'),tr(lang,'eligible'),tr(lang,'met')],((esc(y),esc(n) if n else text(lang,'suppressed'),esc(k)) for y,n,k in groups))
     factor_panel = ''
     if snapshot['source']=='synthetic':
         from datetime import date
-        breakdown,total,missing = rules.factors(cases,date.fromisoformat(snapshot['asof']),dimension,intake_categories)
+        breakdown,coverage,public = rules.analysis(cases,date.fromisoformat(snapshot['asof']),dimension,intake_categories,goal_index)
         choices = ''.join(f'<a class="chip" href="/overview?factor={k}" {"aria-current=page" if k==dimension else ""}>{text(lang,k)}</a>'
-                          for k in ('age','schooling','course','intake'))
-        rendered = table([tr(lang,'category'),'n',tr(lang,'met'),'95% CI'],
-          ((text(lang,label),esc(n) if n else text(lang,'suppressed'), f'{k/n:.1%}' if n else '—',
-            f'{band[0]:.0%}–{band[1]:.0%}' if band else '—') for label,n,k,band in breakdown))
+                          for k in rules.FACTOR_DIMENSIONS) if goal_index==0 else ''
+        goal_choices = ''.join(f'<a class="chip" href="/overview?goal={i}" {"aria-current=page" if i==goal_index else ""}>{text(lang,k)}</a>'
+                               for i,k in enumerate(('a1','work','household')))
+        comparator = max(public,key=lambda row:row[1],default=None)
+        baseline = comparator[3]/comparator[1] if comparator else None
+        rendered = table([tr(lang,'category'),'n',tr(lang,'observed_rate'),tr(lang,'met'),'95% CI',tr(lang,'difference')],
+          ((text(lang,label),esc(n) if n else text(lang,'suppressed'), f'{observed/n:.1%}' if n else '—',
+            f'{k/n:.1%}' if n else '—',f'{band[0]:.0%}–{band[1]:.0%}' if band else '—',
+            f'{(k/n-baseline)*100:+.1f} pp' if n else '—') for label,n,observed,k,band in breakdown))
+        window = text(lang,'observation' if goal_index==0 else 'observed_to_date')
+        upcoming = esc(coverage['upcoming']) if coverage.get('upcoming') is not None else text(lang,'suppressed')
+        missing = esc(coverage['missing']) if coverage.get('missing') is not None else text(lang,'suppressed')
+        aggregates = href('/analysis-export',factor=dimension,goal=goal_index)
         workers = {}
         for c in cases:
             workers.setdefault(c['worker'],[]).append(c)
         caseload = table([tr(lang,'worker'),tr(lang,'people'),tr(lang,'follow'),tr(lang,'quality')],
           ((esc(k),esc(len(items)),esc(sum(c['goals'][0]['state'] in ('risk','review','overdue') for c in items)),
           esc(sum(bool(c['gaps']) for c in items))) for k,items in sorted(workers.items()) if len(items)>=rules.MIN_GROUP))
-        factor_panel = f'<div class="two"><section class="panel"><h2>{text(lang,"explorer")}</h2><p>{text(lang,"observation")} · n={total} · {text(lang,"missing")} {missing}</p><div class="chips">{choices}</div>{rendered}<p>{text(lang,"source_limit")}</p></section><section class="panel"><h2>{text(lang,"caseload")}</h2>{caseload}<p>{text(lang,"quality_note")}</p></section></div>'
+        factor_panel = f'<section class="panel"><h2>{text(lang,"explorer")}</h2><p>{window} · {esc(snapshot["asof"])} · {text(lang,"upcoming_due")} {upcoming} · {text(lang,"missing")} {missing}</p><div class="chips">{goal_choices}</div><div class="chips">{choices}</div>{rendered}<p>{text(lang,"analysis_note")}</p><p>{text(lang,"source_limit")}</p><a class="button" href="{aggregates}">{text(lang,"safe_aggregates")}</a></section><section class="panel"><h2>{text(lang,"caseload")}</h2>{caseload}<p>{text(lang,"quality_note")}</p></section>'
     return f'''<section class="hero"><img class="bern-image" src="/static/bern.jpg" alt=""><div class="hero-copy"><p class="eyebrow">{text(lang,'demo' if snapshot['source']=='synthetic' else 'local')}</p>
 {heading(lang,'overview',text(lang,'lead'))}</div></section>
 <div class="kpis">{kpis}</div><h2>{text(lang,'goals')}</h2><div class="three">{''.join(goals)}</div>
-<section class="panel"><h2>{text(lang,'groups')}</h2><p>{text(lang,'group_note')}</p>{group_html}</section>{factor_panel}'''
+{factor_panel}'''
+
+
+def analysis_export(lang,snapshot,cases,dimension,intake_categories,goal_index):
+    from datetime import date
+    asof = date.fromisoformat(snapshot['asof'])
+    rows,coverage,_ = rules.analysis(cases,asof,dimension,intake_categories,goal_index)
+    return {
+        'Metadata': [[tr(lang,'snapshot'),asof],[tr(lang,'source'),tr(lang,'demo')],
+                     [tr(lang,'goals'),tr(lang,('a1','work','household')[goal_index])],
+                     [tr(lang,'category'),tr(lang,dimension if goal_index==0 else 'cutoff_year')],
+                     [tr(lang,'upcoming_due'),coverage.get('upcoming')],[tr(lang,'missing'),coverage.get('missing')]],
+        'Aggregates': [[tr(lang,'category'),'n',tr(lang,'a1_attainment') if goal_index==0 else tr(lang,'attained'),
+                       tr(lang,'met'),'95% CI lower','95% CI upper']] +
+                      [[tr(lang,label),n,observed,k,*(band or (None,None))] for label,n,observed,k,band in rows],
+    }
 
 
 def queue(lang,cases,query,page,filter_state):
@@ -335,6 +368,7 @@ def reports(lang,snapshot,history,role,csrf,hosted,notice='',issues=(),manifest=
         button = action(lang,'synthetic_load')
         options = ''.join(f'<option>{d}</option>' for d in MONTHS)
         exercise = options+f'<option value="{PHASE4_MONTH}">{PHASE4_MONTH} · {text(lang,"phase4_fixture")}</option>'
+        exercise += f'<option value="{PHASE5_MONTH}">{PHASE5_MONTH} · {text(lang,"phase5_fixture")}</option>'
         import_controls = post('/seed',csrf,f'<label>{text(lang,"snapshot")} <select name="date">{exercise}</select></label>{button}')
         import_controls += post('/seed-invalid',csrf,
             f'<label>{text(lang,"snapshot")} <select name="date">{options}</select></label>'+action(lang,'invalid_demo'))

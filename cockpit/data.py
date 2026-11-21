@@ -28,6 +28,7 @@ PAIR = {'status': DATES['status'], 'membership': DATES['membership'], 'work': DA
         'clients': DATES['clients'][:2]}
 MONTHS = ('2026-09-30','2026-10-31')
 PHASE4_MONTH = '2026-08-31'
+PHASE5_MONTH = '2026-07-31'
 
 
 
@@ -38,6 +39,9 @@ def norm(value):
 def seed(asof, size=144):
     rows = defaultdict(list)
     phase4 = asof==PHASE4_MONTH
+    phase5 = asof==PHASE5_MONTH
+    if phase5:
+        size = max(480,size)
     def add(key, values):
         rows[key].append([values.get(header) for header in SCHEMA[key]['headers']])
     for i in range(size):
@@ -46,7 +50,9 @@ def seed(asof, size=144):
         household = f'SYN-H{i//2+1:05}'
         ids = {'Klientennummer':person,'Zemis Nummer':z,'Klient/-in Zemis-Nr.':z,'Dossier-Nr.':household}
         entry = date(2022+i%4, 10 if i == 1 else 1+i%12, 1+i%24)
-        if i == 0:
+        if phase5:
+            entry = date(2022+(i//6)%2,1+i%6,1+i%24)
+        elif i == 0:
             entry = date(2023,10,16)
         status = ('VA','B-FL','F-FL','B-RSFL','S','N (Asylsuchende)')[i%6]
         end = date(2028+(i//2)%2,6,30)
@@ -61,7 +67,7 @@ def seed(asof, size=144):
         add('membership',ids | {'Dossierperson Von':member_start,'Rolle':'Familienmitglied'})
         add('housing',ids | {'Unterbringung Von':entry,'Unterbringung Art':'Wohnung','PLZ':'3000','Ort':'Bern'})
         if i%4 != 3:
-            proof = date(2026,10,12) if i == 0 else entry + timedelta(days=200+i*11)
+            proof = entry+timedelta(days=(150 if (i//6)%10<5 else 1250)) if phase5 else (date(2026,10,12) if i == 0 else entry + timedelta(days=200+i*11))
             if str(proof) <= asof:
                 add('language', ids | {'Sprache':'Deutsch','Sprachniveau':'A2' if i%5 else 'A1',
                      'Art':'Zertifizierung','Bemerkungen':'fide','Datum Erreichung':proof})
@@ -83,6 +89,13 @@ def seed(asof, size=144):
             add('support',ids | {'Unterstützung':None if phase4 and i==2 else 'Sozialhilfe','Finanzielle Unterstützung Gültig von':date(2022,1,1),
                 'Finanzielle Unterstützung Gültig bis':date(2025,8,15) if i%4==0 else None})
     return {key:xlsx.write({key:[spec['headers'],*rows[key]]}) for key,spec in SCHEMA.items()}
+
+
+def phase5_categories(cases):
+    """Fictional pre-reviewed records for the dedicated synthetic analysis fixture."""
+    categories = ('schooling','course','scheduling','housing')
+    sample = ((case['id'],int(case['id'].removeprefix('DEMO-'))-1) for case in cases)
+    return {identifier:categories[(n//13)%len(categories)] for identifier,n in sample if n%7}
 
 
 class ImportFailure(Exception):
@@ -113,6 +126,10 @@ def connect(path):
       CREATE TABLE IF NOT EXISTS audit(at TEXT, action TEXT, outcome TEXT);
       CREATE TABLE IF NOT EXISTS forecast_input(
         username TEXT PRIMARY KEY REFERENCES accounts(username) ON DELETE CASCADE, series TEXT);
+      CREATE TABLE IF NOT EXISTS intake_demo(
+        session TEXT REFERENCES sessions(token) ON DELETE CASCADE,
+        snapshot INTEGER REFERENCES snapshots(id) ON DELETE CASCADE,
+        category TEXT NOT NULL, PRIMARY KEY(session,snapshot));
       CREATE TABLE IF NOT EXISTS intake(snapshot INTEGER REFERENCES snapshots(id) ON DELETE CASCADE,
         person TEXT, category TEXT, PRIMARY KEY(snapshot,person));
     """)

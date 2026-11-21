@@ -121,6 +121,29 @@ class HTTPTests(TestCase):
         with ZipFile(BytesIO(self.request('/quality')[1])) as archive:
             self.assertNotIn(b'missing_source',archive.read('xl/worksheets/sheet3.xml'))
 
+    def test_hosted_pdf_sample_and_aggregate_export_are_scoped(self):
+        self.server.hosted = True
+        try:
+            csrf = self.login('judging')
+            self.assertEqual(self.request('/seed',{'csrf':csrf,'date':data.PHASE5_MONTH})[0],303)
+            self.assertEqual(self.request('/intake',{'csrf':csrf})[0],403)
+            status, proposal = self.request('/intake-demo',{'csrf':csrf})
+            self.assertEqual(status,200)
+            self.assertIn(b'DEMO-00001',proposal)
+            self.assertIn(b'value="scheduling" selected',proposal)
+            self.assertEqual(self.request('/intake-save',{'csrf':csrf,'person':'DEMO-00001','category':'scheduling'})[0],303)
+            self.assertIn(b'Best',self.request('/intake')[1])
+            status, workbook = self.request('/analysis-export?factor=year&goal=0')
+            self.assertEqual(status,200)
+            with ZipFile(BytesIO(workbook)) as archive:
+                self.assertIn(b'160',archive.read('xl/worksheets/sheet2.xml'))
+                self.assertNotIn(b'DEMO-00001',archive.read('xl/worksheets/sheet2.xml'))
+            self.cookies.clear()
+            self.login('judging')
+            self.assertNotIn('Bestätigte Kategorie'.encode(),self.request('/intake')[1])
+        finally:
+            self.server.hosted = False
+
     def test_three_languages_and_monthly_reimport(self):
         csrf=self.login('judging')
         for language,word in [('de-CH','Übersicht'),('en','Overview'),('fr-CH','Vue d’ensemble')]:

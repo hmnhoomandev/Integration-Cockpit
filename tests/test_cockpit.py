@@ -220,9 +220,38 @@ class InsightTests(TestCase):
             self.assertEqual(answer['mode'],'retrieval_only')
 
     def test_aggregate_suppression(self):
-        cases = [{'entry':date(2024,1,1),'goals':[{'state':'achieved'}]} for i in range(7)]
+        cases = [{'entry':date(2024,1,1),'goals':[{'state':'achieved','deadline':date(2026,1,1)}]} for i in range(7)]
         self.assertEqual(rules.group_metrics(cases),[(2024,None,None)])
         self.assertEqual(insights.gateway(insights.AggregateQuestion('entry_cohort'),'2026-10-31',cases)['mode'],'insufficient')
+
+    def test_release_suppresses_single_small_group_and_complementary_group(self):
+        safe = ['achieved']*12+['overdue']*12
+        rare = ['achieved']+['overdue']*13
+        self.assertEqual(rules.suppress_partition({'large':safe,'small':rare}),{'large','small'})
+
+    def test_analysis_fixture_and_visible_aggregate_citation(self):
+        month = data.PHASE5_MONTH
+        db = data.connect(':memory:')
+        try:
+            index,_ = data.load_files(db,data.seed(month).values(),month,'synthetic')
+            snapshot,rows = data.get_snapshot(db,index)
+            cases = rules.evaluate(snapshot,rows)
+        finally:
+            db.close()
+        full_labels = data.phase5_categories(cases)
+        self.assertEqual(data.phase5_categories(cases[20:40]),
+                         {c['id']:full_labels[c['id']] for c in cases[20:40] if c['id'] in full_labels})
+        cohorts,_,released = rules.analysis(cases,date.fromisoformat(month),'year')
+        self.assertEqual([row[1] for row in cohorts],[160,160])
+        answer = insights.gateway(insights.AggregateQuestion('entry_cohort'),month,cases)
+        self.assertIn((answer['year'],answer['denominator'],answer['count']),[(y,n,k) for y,n,_,k,_ in released])
+        for g in (1,2):
+            results,_,_ = rules.analysis(cases,date.fromisoformat(month),goal_index=g)
+            self.assertTrue(results)
+            tabs = ui.analysis_export(1,snapshot,cases,'year',{},g)
+            blob = xlsx.write(tabs)
+            with ZipFile(BytesIO(blob)) as archive:
+                self.assertFalse(any(b'DEMO-00001' in archive.read(n) or b'SYN-H' in archive.read(n) for n in archive.namelist()))
 
     def test_forecast_is_repeatable_and_uses_holdout(self):
         report = insights.backtest()

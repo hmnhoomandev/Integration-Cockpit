@@ -1,10 +1,11 @@
 """Allowlisted retrieval and aggregate-only time series evaluation."""
 from dataclasses import dataclass
+from datetime import date
 from random import Random
 from statistics import mean
 from math import ceil
 
-from .rules import MIN_GROUP, group_metrics
+from .rules import analysis
 
 IAS = 'https://www.sem.admin.ch/de/integrationsagenda'
 MONITOR = 'https://www.sem.admin.ch/de/monitoring-integrationsfoerderung'
@@ -53,11 +54,11 @@ def gateway(request, snapshot=None, cases=()):
         return {'text':answers[request.language],'source':citation,'section':section,'context_url':url,
                 'mode':'retrieval_only'}
     if type(request) is AggregateQuestion and request.intent=='entry_cohort' and snapshot:
-        published = [(y,n,k) for y,n,k in group_metrics(cases) if n is not None and n>=MIN_GROUP and k>=MIN_GROUP and n-k>=MIN_GROUP]
-        if not published:
+        _,_,released = analysis(cases,date.fromisoformat(snapshot),'year')
+        if not released:
             return {'mode':'insufficient','snapshot':snapshot}
-        y,n,k = min(published,key=lambda x:x[2]/x[1])
-        return {'mode':'deterministic','year':y,'denominator':n,'count':k,'snapshot':snapshot}
+        y,n,_,k,_ = min(released,key=lambda x:x[3]/x[1])
+        return {'mode':'deterministic','year':y,'window':'completed_follow_up','denominator':n,'count':k,'snapshot':snapshot}
     if type(request) is IntakeQuestion and request.category in CATEGORIES:
         return {'mode':'local_classification','category':request.category,'approval_required':True}
     raise ValueError('privacy_policy_denied')

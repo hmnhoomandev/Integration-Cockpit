@@ -6,3 +6,5 @@ __pycache__/
 .env
 *.xlsx
 *.pdf
+
+!cockpit/synthetic-intake.pdf
