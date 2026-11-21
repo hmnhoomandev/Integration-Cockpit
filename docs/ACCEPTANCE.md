@@ -10,7 +10,7 @@
 | ASD-4 / 6 | Verified core journeys | Queue, evidence, timelines, snapshot selection and XLSX work in three languages. Raw source terms and some technical messages remain German or English by design or limitation. |
 | PAY, RULE27, ZEMIS, LOAD / 7 | Partial | Illustrative A1 tariff, candidate 2027 cutoff count, overlap-based ZEMIS alerts and assignment caseload. Amounts and actual cohort logic require ASD validation. |
 | ACCESS, AI-GW, AI-RULE, AI-GROUP / 8 | Verified fallback and access | Signed-out denial, roles, CSRF, session expiry, allowlisted inputs and cited topic retrieval. Four rules topics use local cited retrieval. No LLM adapter was used. Authorization and approval of model hosting, if added, remain open. |
-| SCALE / 9 | Partial | Run timings and actual workload in [verification](VERIFICATION.md). Architecture materializes snapshot rows for calculations. One million source rows, concurrency under institutional load, and production failover remain unverified. |
+| SCALE / 9 | Partial | Run timings and actual workload in [verification](VERIFICATION.md). The CLI completed 1,024,755 synthetic source rows through Excel export. The rule engine materializes calculations in memory. Concurrency under institutional load and managed failover remain unverified. |
 | HANDOFF / 10 | Verified demo profile | Public temporary HTTPS with authenticated synthetic demo, repo documentation, Excel and video assets. Durable hosting, municipal SSO and institutional governance remain open. |
 
 ## Forecast

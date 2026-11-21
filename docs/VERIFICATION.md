@@ -20,7 +20,11 @@ Measured on the local macOS laptop with CPython 3.14.6, using the synthetic 11-w
 | 10,000 | 82,104 | 2.19 | 12.43 | 1.00 | 0.73 | 531.7 |
 | 40,000 | 328,013 | 9.04 | 71.68 | 6.57 | 4.19 | 2,020.9 |
 
-One million rows have not been verified. Long imports should use the CLI.
+After the streaming workbook reader change, a separate CLI run processed **1,024,755 source rows for 125,000 distinct synthetic people**. Fixture generation took 34.36 seconds, import 218.65 seconds, evaluation 27.60 seconds and export 14.68 seconds. The workbook was 9,421,519 bytes. Peak process RSS was 1,793.5 MiB. The benchmark asserted the number of distinct people and reconciled the A1 status total. This is a single-user workload. Long imports should use the CLI.
+
+```sh
+python3 -m cockpit.benchmark 125000
+```
 
 ## Browser
 
@@ -31,3 +35,5 @@ The local Chrome run additionally uploaded all 11 synthetic XLSX files via the f
 ## Production rehearsal
 
 The deployment smoke command verified live HTTPS and anonymous route protection, German/French/English, both month replays, the October evidence in the downloaded Excel, the rules assistant, forecast, and logout. A GitHub Actions workflow now runs the regression suite on Python 3.12 and 3.14 on each push and pull request.
+
+The production regression suite exercised actual image-only OCR on Linux with Poppler and Tesseract. The OCR fixture produced an exact ZEMIS match and a category pending human approval.
