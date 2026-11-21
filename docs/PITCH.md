@@ -23,9 +23,9 @@
 
 > “A1 is due on 16 October, in 16 days. The next step is right at the top: register for a fide or telc exam. Below it, every result shows the Excel rows it came from.”
 
-*Point to the **KI-Prognose** panel and the **Kontakt** panel on a case at risk (for example DEMO-00006).*
+*Point to the **KI-Gruppenmuster** panel and the **Kontakt** panel on a case at risk (for example DEMO-00006).*
 
-> “The AI forecast comes from a model trained on this computer, using the people whose deadline has already passed. This person has an 11 % chance of reaching A1 on time; the average is 52 %. The panel also says why: no course in the first six months. Nationality, mother tongue and gender are never used. One click calls the person, or opens a prepared email in German, French or English.”
+> “The AI panel shows group patterns, never a score per person, exactly as the brief asks. Of 30 people in a similar situation, 9 reached A1 on time. In the same age group, people who started a course in the first six months reached it 72 % of the time. The model is trained on this computer, and nationality, mother tongue and gender are never used. One click calls the person, or opens a prepared email in German, French or English.”
 
 *Switch to the October snapshot in **Daten & Berichte** and reopen the case.*
 

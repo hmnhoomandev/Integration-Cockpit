@@ -124,14 +124,15 @@ class Model:
         probability = self.score(x)
         effects = sorted(((name,w*v) for name,w,v in zip(FEATURES,self.weights[1:],x)),key=lambda e:-abs(e[1]))
         factors = [(name,effect) for name,effect in effects if abs(effect)>=.15][:3]
+        def group(**fixed):
+            # Completed cases in the same situation; suppressed below MIN_GROUP or with a tiny numerator/complement.
+            labels = [label for (c,r),label in zip(self.done,self.labels)
+                      if all(r[k]==v for k,v in fixed.items()) and (r['age_at_entry'] or 0)//10==(raw['age_at_entry'] or 0)//10]
+            return (len(labels),sum(labels)) if len(labels)>=MIN_GROUP and MIN_GROUP<=sum(labels)<=len(labels)-MIN_GROUP else None
+        peers = group(course_early=raw['course_early'],course_late=raw['course_late'])
         scenario = None
-        if not raw['course_early'] and not raw['course_late'] and case['entry'] and months(case['entry'],6)>=self.asof:
-            # Only while the six-month window after entry is still open.
-            scenario = ('scenario_course_now',self.score(self.vector(dict(raw,course_early=1.0))))
-        similar = [label for (c,r),label in zip(self.done,self.labels)
-                   if r['course_early']==raw['course_early'] and r['course_late']==raw['course_late']
-                   and (r['age_at_entry'] or 0)//10==(raw['age_at_entry'] or 0)//10]
-        peers = (len(similar),sum(similar)) if len(similar)>=MIN_GROUP and MIN_GROUP<=sum(similar)<=len(similar)-MIN_GROUP else None
+        if not raw['course_early']:
+            scenario = ('scenario_course_now',group(course_early=1.0,course_late=0.0))
         return {'probability':probability,'factors':factors,'scenario':scenario,'peers':peers,'raw':raw,
                 'validation':self.validation,'base':self.base}
 

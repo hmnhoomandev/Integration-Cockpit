@@ -789,6 +789,39 @@ COPY.update({
             'Chaque résultat d’IA est une suggestion. La décision revient toujours à un·e professionnel·le.'),
 })
 
+COPY.update({
+ 'pred_title':('KI-Gruppenmuster · Sprache A1','AI group pattern · Language A1','Profil de groupe IA · Langue A1'),
+ 'pred_lead':('Wie erging es Personen in einer ähnlichen Lage? Das Cockpit zeigt Gruppen, nie eine Bewertung dieser Person.',
+              'How did people in a similar situation do? The cockpit shows groups, never a score for this person.',
+              'Comment s’en sont sorties les personnes dans une situation semblable ? Le cockpit montre des groupes, jamais une note pour cette personne.'),
+ 'pred_peers':('von {n} Personen in ähnlicher Lage (gleiches Kursmuster, gleiche Altersgruppe) erreichten A1 fristgerecht: {k}.',
+               'of {n} people in a similar situation (same course pattern, same age group) reached A1 on time: {k}.',
+               'des {n} personnes dans une situation semblable (même parcours de cours, même tranche d’âge) ont atteint l’A1 à temps : {k}.'),
+ 'pred_base':('Strich im Balken: Durchschnitt aller abgeschlossenen Fälle, {rate}.','Mark on the bar: average of all completed cases, {rate}.',
+              'Repère sur la barre : moyenne de tous les dossiers terminés, {rate}.'),
+ 'pred_small':('Die ähnliche Gruppe ist zu klein (unter 8 Personen). Es wird kein Muster angezeigt.','The similar group is too small (under 8 people). No pattern is shown.',
+               'Le groupe semblable est trop petit (moins de 8 personnes). Aucun profil n’est affiché.'),
+ 'scenario_course_now':('Gleiche Altersgruppe mit Sprachkurs in den ersten 6 Monaten: {rate} fristgerecht (n = {n}).',
+                        'Same age group with a language course in the first 6 months: {rate} on time (n = {n}).',
+                        'Même tranche d’âge avec cours de langue dans les 6 premiers mois : {rate} à temps (n = {n}).'),
+ 'pred_factors':('Merkmale dieser Lage, die im ganzen Fallbestand den grössten Unterschied machen','Features of this situation that make the biggest difference across the caseload',
+                 'Caractéristiques de cette situation qui font le plus de différence dans l’ensemble des dossiers'),
+ 'pred_up':('höhere Quoten','higher rates','taux plus élevés'),
+ 'pred_down':('tiefere Quoten','lower rates','taux plus bas'),
+ 'pred_model':('Muster aus einer logistischen Regression, auf diesem Rechner trainiert mit {n} abgeschlossenen Fällen (AUC {auc}, Kreuzvalidierung). Ohne Nationalität, Muttersprache und Geschlecht. Keine Bewertung pro Person.',
+               'Patterns from a logistic regression trained on this computer with {n} completed cases (AUC {auc}, cross-validated). Nationality, mother tongue and gender are not used. No score per person.',
+               'Profils issus d’une régression logistique entraînée sur cet ordinateur avec {n} dossiers terminés (AUC {auc}, validation croisée). Sans nationalité, langue maternelle ni sexe. Aucune note par personne.'),
+ 'pred_caution':('Gruppenmuster für das Gespräch, keine Aussage über diese Person. Nie für Leistungen oder Sanktionen verwenden.',
+                 'Group patterns for the conversation, not a statement about this person. Never use them for benefits or sanctions.',
+                 'Profils de groupe pour l’entretien, pas un jugement sur cette personne. Ne jamais les utiliser pour des prestations ou des sanctions.'),
+ 'help_prediction':('Ein Modell lernt aus Personen, deren A1-Frist abgelaufen ist, welche Merkmale mit Erfolg einhergehen. Angezeigt werden Quoten ähnlicher Gruppen (mindestens 8 Personen), nie eine Zahl für diese Person.',
+                    'A model learns from people whose A1 deadline has passed which features go with success. It shows rates for similar groups (at least 8 people), never a number for this person.',
+                    'Un modèle apprend, à partir des personnes dont le délai A1 est échu, quelles caractéristiques vont avec la réussite. Il montre des taux de groupes semblables (au moins 8 personnes), jamais un chiffre pour cette personne.'),
+ 'pv_ai_1':('Gruppenmuster: ein Modell, das auf diesem Rechner trainiert wird und läuft. Es zeigt Quoten ähnlicher Gruppen ab 8 Personen, nie eine Bewertung pro Person. Nationalität, Muttersprache und Geschlecht werden nicht verwendet.',
+            'Group patterns: a model trained and run on this computer. It shows rates for similar groups of 8 or more people, never a score per person. Nationality, mother tongue and gender are not used.',
+            'Profils de groupe : un modèle entraîné et exécuté sur cet ordinateur. Il montre des taux de groupes semblables d’au moins 8 personnes, jamais une note par personne. Sans nationalité, langue maternelle ni sexe.'),
+})
+
 DATASET_NAMES = {'language':'Sprachstand','official':'Integrationszielerreichung','work':'Erwerb',
                  'education':'Integrationsförderung und Ausbildung','membership':'Dossierperson',
                  'support':'Finanzielle Unterstützung','zemis':'ZEMIS Tätigkeit','housing':'Unterbringung',
@@ -1258,27 +1291,32 @@ def factor_label(lang,name,case,raw_value):
 
 
 def prediction_panel(lang,case,result):
+    # Group patterns only: the challenge asks for "patterns on groups, never a score per person".
     head = (f'<div class="section-head"><h2>{text(lang,"pred_title")}</h2><span class="ai-badge">{text(lang,"ai_badge")}</span>'
             f'{tip(lang,"help_prediction")}</div>')
     if result is None:
         return f'<section class="panel ai-panel">{head}<p class="muted">{text(lang,"pred_none")}</p></section>'
-    p = result['probability']
-    tone = 'high' if p>=.6 else 'mid' if p>=.35 else 'low'
-    bar = (f'<svg class="pred-bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"/>'
-           f'<rect class="fill {tone}" width="{max(2,round(p*100))}" height="8" rx="4"/><rect class="base" x="{round(result["base"]*100)}" width="0.8" height="8"/></svg>')
+    if result['peers'] is None:
+        figure = f'<p class="muted">{text(lang,"pred_small")}</p>'
+    else:
+        n,k = result['peers']
+        rate = k/n
+        tone = 'high' if rate>=.6 else 'mid' if rate>=.35 else 'low'
+        bar = (f'<svg class="pred-bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"/>'
+               f'<rect class="fill {tone}" width="{max(2,round(rate*100))}" height="8" rx="4"/><rect class="base" x="{round(result["base"]*100)}" width="0.8" height="8"/></svg>')
+        figure = (f'<div class="pred-figure"><strong class="{tone}">{percent(rate)}</strong><span>{say(lang,"pred_peers",n=n,k=k)}</span></div>{bar}'
+                  f'<p class="legend">{say(lang,"pred_base",rate=percent(result["base"]))}</p>')
     raw = result['raw']
     items = ''.join(f'<li class="{"up" if effect>0 else "down"}"><span>{"▲" if effect>0 else "▼"}</span>{factor_label(lang,name,case,raw.get(name))}'
                     f' <em>{text(lang,"pred_up" if effect>0 else "pred_down")}</em></li>' for name,effect in result['factors'])
     scenario = ''
-    if result['scenario']:
-        key,after = result['scenario']
-        scenario = f'<p class="pred-scenario">{say(lang,key,before=percent(p),after=percent(after))}</p>'
-    peers = f'<p>{say(lang,"pred_peers",n=result["peers"][0],k=result["peers"][1])}</p>' if result['peers'] else ''
+    if result['scenario'] and result['scenario'][1]:
+        key,(n,k) = result['scenario']
+        scenario = f'<p class="pred-scenario">{say(lang,key,rate=percent(k/n),n=n)}</p>'
     v = result['validation']
     model = say(lang,'pred_model',n=v['n'],auc=f'{v["auc"]:.2f}',skill=percent(v['skill']))
-    return (f'<section class="panel ai-panel">{head}<p>{text(lang,"pred_lead")}</p>'
-            f'<div class="pred-figure"><strong class="{tone}">{percent(p)}</strong><span>{say(lang,"pred_base",rate=percent(result["base"]))}</span></div>{bar}'
-            f'{scenario}<h3>{text(lang,"pred_factors")}</h3><ul class="pred-factors">{items}</ul>{peers}'
+    return (f'<section class="panel ai-panel">{head}<p>{text(lang,"pred_lead")}</p>{figure}{scenario}'
+            f'<h3>{text(lang,"pred_factors")}</h3><ul class="pred-factors">{items}</ul>'
             f'<p class="legend">{model}</p><p class="legend caution">{text(lang,"pred_caution")}</p></section>')
 
 
