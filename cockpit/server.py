@@ -174,10 +174,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(204)
         if not post and path=='/health':
             return self.respond(200,'ok','text/plain')
-        if not post and path in ('/static/app.css','/static/bern.jpg'):
+        assets = {'app.css':'text/css; charset=utf-8','bern.jpg':'image/jpeg',
+                  'bern-canton.png':'image/png','stadt-bern.png':'image/png','sem-shield.svg':'image/svg+xml'}
+        if not post and path.startswith('/static/') and path[8:] in assets:
             asset = ROOT / path.lstrip('/')
             if asset.is_file():
-                return self.respond(200,asset.read_bytes(),'text/css' if path.endswith('css') else 'image/jpeg')
+                return self.respond(200,asset.read_bytes(),assets[path[8:]])
             return self.respond(404)
         if not post and path.startswith('/language/') and path.split('/')[-1] in ui.LOCALES:
             try:

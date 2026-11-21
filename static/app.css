@@ -131,3 +131,111 @@ details { margin-top: .7rem; }
 }
 .pricing .tablewrap { width: 100%; }
 .pricing input { width: 7rem; }
+
+/* Bern civic identity */
+:root {
+  --ink: #221d19;
+  --muted: #675e56;
+  --line: #e4ddd5;
+  --paper: #f5f2ed;
+  --panel: #fffefa;
+  --accent: #f7cf52;
+  --bern-red: #a82329;
+  --bern-dark: #75191f;
+  --bern-soft: #f9e8e4;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+.dashboard { grid-template-columns: 249px minmax(0,1fr); }
+aside {
+  background: #fffefa;
+  color: var(--ink);
+  border-right: 1px solid var(--line);
+  padding: 1.45rem 1.05rem;
+}
+.brand { font-size: .94rem; line-height: 1.17; letter-spacing: -.025em; gap: .68rem; }
+.brand-flag { width: 2.65rem; height: 2.65rem; object-fit: cover; border: 1px solid #322a2020; border-radius: 5px; }
+.brand small { margin-top: .18rem; color: var(--bern-red); font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; font-weight: 750; }
+nav { margin-top: 2.3rem; }
+nav a { display: flex; align-items: center; gap: .66rem; border: 1px solid transparent; color: #554942; border-radius: 5px; padding: .67rem .68rem; }
+.nav-icon { display: inline-grid; place-items: center; width: 1.1rem; height: 1.1rem; color: var(--bern-red); font-size: 1rem; }
+nav a:hover, nav a[aria-current=page] { color: var(--bern-dark); background: var(--bern-soft); border-color: #e9cbc5; }
+nav a[aria-current=page] { font-weight: 700; box-shadow: inset 3px 0 0 var(--bern-red); }
+.aside-bottom { color: var(--muted); padding-top: .85rem; border-top: 1px solid var(--line); }
+.aside-bottom button { border-color: #ddc5c0; }
+header { background: #fffefa; border-top: 3px solid var(--bern-red); min-height: 66px; }
+.header-context { display: flex; gap: .65rem; align-items: center; min-width: 0; }
+.swiss-flag { position: relative; display: inline-block; flex: 0 0 20px; height: 20px; border-radius: 3px; background: #d6242c; }
+.swiss-flag::before,.swiss-flag::after { position: absolute; content: ""; background: white; left: 50%; top: 50%; transform: translate(-50%,-50%); }
+.swiss-flag::before { width: 12px; height: 4px; }
+.swiss-flag::after { width: 4px; height: 12px; }
+.snapshot { font-size: .79rem; }
+.languages { background: #f0ebe5; border: 1px solid #e5dbd2; border-radius: 5px; }
+.languages a { border-radius: 3px; }
+.languages a[aria-current=page] { color: var(--bern-dark); box-shadow: 0 1px 3px #4f302e26; }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline-color: var(--bern-red); }
+main { padding: clamp(1.15rem,2.8vw,2.8rem); }
+main > .heading { border-left: 4px solid var(--bern-red); padding-left: .9rem; }
+h1 { font-size: clamp(2.2rem,4.7vw,4.1rem); letter-spacing: -.065em; }
+h2 { letter-spacing: -.035em; }
+.hero,.login-hero { background: var(--bern-dark); border-radius: 8px; border-bottom: 4px solid var(--accent); }
+.hero { min-height: 244px; padding: clamp(1.4rem,4vw,3rem); }
+.hero::after,.login-hero::after { display: none; }
+.bern-image { filter: saturate(.78); }
+.hero .bern-image { width: 68%; left: auto; object-position: center 43%; }
+.hero::before { background: linear-gradient(90deg,#75191f 28%,#75191ff2 40%,#37161b55 69%,#261e1c28); }
+.login-hero::before { background: linear-gradient(0deg,#451316fb 5%,#59181fc9 43%,#1a171a19 85%); }
+.hero .heading p,.login-hero p { color: #fff5ec; }
+.eyebrow { color: #ffdc72 !important; }
+.kpi,.panel,.login-card { border-radius: 7px; box-shadow: 0 2px 4px #442a1510; }
+.kpi { border-top: 3px solid #e4d4c8; }
+.kpi:nth-child(3) { border-top-color: #d9a321; }
+.kpi:nth-child(4) { border-top-color: var(--bern-red); }
+.kpi strong { color: #33231e; }
+.panel { margin-bottom: .8rem; }
+.two .panel,.three .panel { margin-bottom: 0; }
+.tablewrap { border-radius: 5px; }
+th { background: #f1eae2; color: #513d34; }
+tbody tr:hover { background: #faf4eb; }
+.case-link { color: var(--bern-dark); }
+button,.button,.chip,.pagination a { border-radius: 5px; background: var(--bern-red); border-color: var(--bern-red); }
+button:hover,.button:hover { background: var(--bern-dark); }
+header button,.chip,.pagination a { background: var(--panel); color: var(--bern-dark); border-color: #d8c4ba; }
+header button:hover,.chip:hover,.chip[aria-current=page] { background: var(--bern-soft); }
+input,select { border-color: #cbbcb0; border-radius: 4px; }
+.feedback { border-left-color: var(--bern-red); background: #faece8; }
+.series meter { accent-color: var(--bern-red); }
+.institutions { margin-top: 1.65rem; border-top: 1px solid var(--line); padding: .85rem 0 .4rem; }
+.institutions > p { color: var(--muted); font-size: .73rem; line-height: 1.35; }
+.institutions-row { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; margin: .55rem 0; }
+.institutions-row a { height: 48px; background: white; border: 1px solid var(--line); border-radius: 4px; text-decoration: none; }
+.institutions-row a:hover { border-color: var(--bern-red); }
+.city-mark { position: relative; width: 120px; overflow: hidden; }
+.city-mark img { position: absolute; width: 141px; height: auto; left: -10px; top: -35px; }
+.sem-mark { display: flex; align-items: center; gap: .5rem; padding: 0 .6rem; }
+.sem-mark img { width: 23px; height: 28px; }
+.sem-mark strong,.sem-mark small { display: block; }
+.sem-mark strong { font-size: .9rem; letter-spacing: .035em; }
+.sem-mark small { font-size: .64rem; color: var(--muted); }
+.signin main { padding-top: min(6vh,3rem); }
+.signin .institutions,.signin .photo-credit { grid-column: 1/-1; }
+.signin .institutions { margin-top: 0; }
+@media(max-width:1000px) { .dashboard { grid-template-columns: 192px minmax(0,1fr); } .brand { font-size: .78rem; } }
+@media(max-width:690px) {
+  .dashboard { display: block; }
+  aside { border-right: 0; border-bottom: 1px solid var(--line); padding: .68rem .75rem; }
+  .brand { font-size: .89rem; }
+  .brand-flag { width: 2.05rem; height: 2.05rem; }
+  nav { margin-top: .6rem; }
+  nav a { padding: .55rem .62rem; gap: .38rem; }
+  .aside-bottom { padding-top: .45rem; }
+  .role-label { margin-bottom: .27rem; }
+  .hero { min-height: 205px; }
+  .hero .bern-image { width: 100%; }
+  .hero::before { background: linear-gradient(90deg,#69191ff6,#642027ae 58%,#361c1d75); }
+  .signin main { padding-top: .9rem; }
+}
+.login-signature { display: flex; align-items: center; gap: .65rem; margin-bottom: .9rem; }
+.login-signature p:last-child { margin: 0; }
+.institutions-row a { height: 56px; }
+.city-mark { width: 134px; }
+.city-mark img { width: 145px; left: -5px; top: -35px; }

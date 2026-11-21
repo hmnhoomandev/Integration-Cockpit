@@ -196,6 +196,9 @@ COPY = {
  'monthly_note':('Die Änderung folgt aus den Monatszählungen. Die Daten erklären keine Ursachen.','This difference comes from the monthly counts. The data do not establish causes.','L’écart provient des comptages mensuels. Les données ne permettent pas d’établir une cause.'),
  'local_release':('Freigabe bleibt in der Anwendung. Keine Modellanfrage.','The released fields stay in the application. No model request is made.','Les champs autorisés restent dans l’application. Aucun appel à un modèle.'),
  'aggregate_role':('Aggregierte Antworten für Leitung und Demo-Konto','Aggregate answers for management and the demo account','Réponses agrégées pour la direction et le compte de démonstration'),
+ 'brand_context':('Behörden im Projektkontext','Public authorities referenced by this project','Autorités publiques citées dans le projet'),
+ 'brand_independence':('Eigenständiger Hackathon-Prototyp','Independent hackathon prototype','Prototype indépendant du hackathon'),
+ 'sem_name':('Staatssekretariat für Migration','State Secretariat for Migration','Secrétariat d’État aux migrations'),
  'missing_source':('Pflichtdatei fehlt','Required workbook is missing','Classeur obligatoire manquant'),
  'unrecognized_or_invalid_workbook':('Datei ungültig oder doppelt','Invalid or duplicate workbook','Classeur invalide ou en double'),
  'invalid_worksheet_data':('Ungültige Tabelleninhalte','Invalid worksheet content','Contenu de feuille invalide'),
@@ -297,6 +300,19 @@ def badge(lang,state):
     return f'<span class="badge {esc(state)}"><i></i>{text(lang,state)}</span>'
 
 
+NAV_SYMBOLS = {'overview':'▦','queue':'☷','reports':'▤','ai':'◇','forecast':'⌁','intake':'▧'}
+
+
+def institutional_marks(lang):
+    return (
+        f'<section class="institutions" aria-label="{text(lang,"brand_context")}">'
+        f'<p>{text(lang,"brand_context")}</p><div class="institutions-row">'
+        '<a class="city-mark" href="https://www.bern.ch/asylsozialdienst"><img src="/static/stadt-bern.png" alt="Stadt Bern"></a>'
+        f'<a class="sem-mark" href="https://www.sem.admin.ch/"><img src="/static/sem-shield.svg" alt=""><span><strong>SEM</strong><small>{text(lang,"sem_name")}</small></span></a>'
+        f'</div><p>{text(lang,"brand_independence")}</p></section>'
+    )
+
+
 def layout(lang,active,body,account=None,csrf='',snapshot=None,demo_switch=False,view_path=''):
     menus = ['overview','queue','reports','ai','forecast','intake']
     if account:
@@ -306,7 +322,7 @@ def layout(lang,active,body,account=None,csrf='',snapshot=None,demo_switch=False
             menus = [m for m in menus if m not in ('queue','intake')]
         if account['role']=='importer':
             menus = ['reports','intake','ai']
-    nav = ''.join(f'<a href="/{key}" {"aria-current=page" if key==active or key=="queue" and active=="case" else ""}>{text(lang,key)}</a>' for key in menus) if account else ''
+    nav = ''.join(f'<a href="/{key}" {"aria-current=page" if key==active or key=="queue" and active=="case" else ""}><span class="nav-icon" aria-hidden="true">{NAV_SYMBOLS[key]}</span><span>{text(lang,key)}</span></a>' for key in menus) if account else ''
     target = urlsplit(view_path or '/'+active)
     parameters = parse_qs(target.query)
     filters = {k:parameters[k][0] for k in ('q','state','page','goal','factor','topic','intent','asof') if k in parameters}
@@ -320,12 +336,12 @@ def layout(lang,active,body,account=None,csrf='',snapshot=None,demo_switch=False
                        for key in ('judge','worker','manager','importer'))
         persona = post('/demo-role',csrf,f'<label>{text(lang,"demo_persona")} <select name="role">{opts}</select></label>'+action(lang,'apply_role'))
     role_label = f'<span class="role-label">{text(lang,"role_"+account["role"])}</span>' if account else ''
-    frame = f'<aside><a class="brand" href="/"><span aria-hidden="true">✳</span><div>Integrations-Cockpit<small>Bern</small></div></a><nav aria-label="{text(lang,"navigation")}">{nav}</nav><div class="aside-bottom">{role_label}{persona}</div></aside>' if account else ''
+    frame = f'<aside><a class="brand" href="/"><img class="brand-flag" src="/static/bern-canton.png" alt=""><div>Integrations-Cockpit<small>Bern</small></div></a><nav aria-label="{text(lang,"navigation")}">{nav}</nav><div class="aside-bottom">{role_label}{persona}</div></aside>' if account else ''
     mode = 'dashboard' if account else 'signin'
     return f'''<!doctype html><html lang="{LOCALES[lang]}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{text(lang,active)} · Integrations-Cockpit Bern</title><link rel="stylesheet" href="/static/app.css"></head>
-<body class="{mode}"><a class="skip-link" href="#main">{text(lang,"skip_main")}</a>{frame}<div class="workspace"><header>{date}<div class="header-actions"><div class="languages">{language}</div>{logout}</div></header>
-<main id="main" tabindex="-1">{body}<footer class="photo-credit">{'<a href="https://commons.wikimedia.org/wiki/File:Bern_Altstadt_von_Rosengarten_20211007.jpg">Bern · Daniel Kraft</a> · <a href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>' if active in ('overview','login') else ''}</footer></main></div></body></html>'''
+<body class="{mode}"><a class="skip-link" href="#main">{text(lang,"skip_main")}</a>{frame}<div class="workspace"><header><div class="header-context"><span class="swiss-flag" role="img" aria-label="Schweiz · Suisse · Svizzera"></span>{date or f'<span class="snapshot">{text(lang,"brand_independence")}</span>'}</div><div class="header-actions"><div class="languages">{language}</div>{logout}</div></header>
+<main id="main" tabindex="-1">{body}{institutional_marks(lang)}<footer class="photo-credit">{'<a href="https://commons.wikimedia.org/wiki/File:Bern_Altstadt_von_Rosengarten_20211007.jpg">Bern · Daniel Kraft</a> · <a href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>' if active in ('overview','login') else ''}</footer></main></div></body></html>'''
 
 
 def overview(lang,snapshot,cases,management,dimension='year',intake_categories=None,goal_index=0,trend=()):
@@ -602,7 +618,7 @@ def forecast(lang,report,tariffs,cases,series=None,can_upload=False,csrf='',cand
 
 
 def login(lang,csrf,error=''):
-    return '<section class="login-hero"><img class="bern-image" src="/static/bern.jpg" alt=""><div><p class="eyebrow">'+text(lang,'demo')+'</p><h1>Integrations-<br>Cockpit Bern</h1><p>'+text(lang,'lead')+'</p></div></section><section class="login-card">'+heading(lang,'login')+(
+    return '<section class="login-hero"><img class="bern-image" src="/static/bern.jpg" alt=""><div><div class="login-signature"><img class="brand-flag" src="/static/bern-canton.png" alt=""><p class="eyebrow">'+text(lang,'demo')+'</p></div><h1>Integrations-<br>Cockpit Bern</h1><p>'+text(lang,'lead')+'</p></div></section><section class="login-card">'+heading(lang,'login')+(
         f'<p class="feedback" role="alert">{text(lang,error)}</p>' if error else '')+post('/login',csrf,
         f'<label>{text(lang,"username")}<input name="username" autocomplete="username" required></label>'
         f'<label>{text(lang,"password")}<input name="password" type="password" autocomplete="current-password" required></label>'
