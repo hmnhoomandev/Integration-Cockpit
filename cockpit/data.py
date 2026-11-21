@@ -1,5 +1,6 @@
 """Source contracts, deterministic fixtures and transactional snapshot storage."""
 from collections import defaultdict
+from contextlib import closing
 from datetime import date, timedelta, datetime, timezone
 from hashlib import sha256
 from pathlib import Path
@@ -109,17 +110,20 @@ def load_files(db, files, asof, source):
     recognized = {}
     issues = []
     hashed = sha256(f'{report}:{source}'.encode())
-    headers = {tuple(item['headers']):key for key,item in SCHEMA.items()}
+    headers = {frozenset(item['headers']):key for key,item in SCHEMA.items()}
     for n, blob in enumerate(files,1):
         try:
             stream = xlsx.read(blob)
             _, header, mac = next(stream)
-            key = headers.get(tuple(norm(value) for value in header))
+            header = tuple(norm(value) for value in header)
+            key = headers.get(frozenset(header)) if len(set(header)) == len(header) else None
             if key is None or key in recognized:
                 raise ValueError('unknown_or_duplicate_contract')
-            recognized[key] = (blob, stream, mac)
+            recognized[key] = (blob, header, mac)
         except (ValueError,TypeError,OverflowError,BadZipFile,KeyError,StopIteration,ParseError,IndexError):
             issues.append((f'file {n}',1,'unrecognized_or_invalid_workbook'))
+        finally:
+            stream.close()
     issues.extend((key,1,'missing_source') for key in SCHEMA.keys()-recognized.keys())
     if issues:
         raise ImportFailure(issues)
@@ -137,16 +141,16 @@ def load_files(db, files, asof, source):
             return db.execute('SELECT id FROM snapshots WHERE digest=?',(digest,)).fetchone()[0], True
         snapshot = cursor.lastrowid
         for key in ['clients',*(k for k in SCHEMA if k!='clients')]:
-            _, stream, mac = recognized[key]
+            blob, header, mac = recognized[key]
             seen = set()
             batch = []
             count[key] = 0
-            for line, cells, _ in stream:
+            for line, cells, _ in read_data_rows(blob,key):
                 if len(issues) >= 100:
                     break
                 if not any(x not in (None,'') for x in cells):
                     continue
-                row = dict(zip(SCHEMA[key]['headers'],(norm(value) for value in cells),strict=False))
+                row = dict(zip(header,(norm(value) for value in cells),strict=False))
                 try:
                     if any(row.get(k) is not None and not isinstance(row[k],str) for k in IDS):
                         raise ValueError('numeric_identifier')
@@ -201,6 +205,18 @@ def load_files(db, files, asof, source):
     return snapshot, False
 
 
+
+def read_data_rows(blob,key):
+    line = 1
+    try:
+        with closing(xlsx.read(blob)) as stream:
+            next(stream)
+            for line, cells, mac in stream:
+                yield line, cells, mac
+    except (ValueError,TypeError,OverflowError,BadZipFile,KeyError,StopIteration,ParseError,IndexError) as exc:
+        raise ImportFailure([(key,line+1,'invalid_worksheet_data')]) from exc
+
+
 def get_snapshot(db, id=None):
     row = db.execute('SELECT * FROM snapshots WHERE id=?',(id,)).fetchone() if id else db.execute(
         'SELECT * FROM snapshots ORDER BY asof DESC,id DESC LIMIT 1').fetchone()
@@ -210,3 +226,21 @@ def get_snapshot(db, id=None):
     for entry in db.execute('SELECT dataset,content FROM source_rows WHERE snapshot=? ORDER BY dataset,line',(row['id'],)):
         data[entry['dataset']].append(json.loads(entry['content']))
     return row,data
+
+
+def backup(db, destination):
+    """Create a consistent private backup without replacing an existing file."""
+    import os
+    from tempfile import mkstemp
+    destination = Path(destination)
+    parent = destination.parent
+    fd, temporary = mkstemp(prefix='.cockpit-backup-',dir=parent)
+    os.close(fd)
+    try:
+        with closing(sqlite3.connect(temporary)) as copy:
+            db.backup(copy)
+            if copy.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
+                raise OSError('backup integrity check failed')
+        os.link(temporary,destination)
+    finally:
+        os.unlink(temporary)

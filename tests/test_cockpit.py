@@ -26,6 +26,28 @@ class SnapshotTests(TestCase):
                 self.assertEqual(next(xlsx.read(blob))[1],data.SCHEMA[key]['headers'])
             self.assertEqual(data.load_files(self.db,generated.values(),month,'synthetic'),(identifier,True))
 
+    def test_reordered_columns_and_backup(self):
+        asof = data.MONTHS[-1]
+        books = data.seed(asof)
+        reordered = [list(reversed(cells + [None]*(7-len(cells)))) for _,cells,_ in xlsx.read(books['events'])]
+        books['events'] = xlsx.write({'events':reordered})
+        with TemporaryDirectory() as directory:
+            path = Path(directory)/'backup.sqlite'
+            db = data.connect(':memory:')
+            try:
+                identifier,_ = data.load_files(db,books.values(),asof,'synthetic')
+                data.backup(db,path)
+                with self.assertRaises(FileExistsError):
+                    data.backup(db,path)
+                restored = data.connect(path)
+                try:
+                    snap, rows = data.get_snapshot(restored,identifier)
+                    self.assertEqual(rules.evaluate(snap,rows)[0]['goals'][0]['state'],'achieved')
+                finally:
+                    restored.close()
+            finally:
+                db.close()
+
     def test_invalid_batch_does_not_publish(self):
         books = data.seed(data.MONTHS[0])
         spec = data.SCHEMA['events']['headers']

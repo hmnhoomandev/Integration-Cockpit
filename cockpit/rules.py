@@ -198,7 +198,7 @@ def counts(cases, goal):
     return Counter(case['goals'][goal]['state'] for case in cases)
 
 
-def factors(cases, asof, dimension):
+def factors(cases, asof, dimension, intake_categories=None):
     """Fixed synthetic partitions restricted to complete A1 follow-up."""
     groups = defaultdict(list)
     unknown = 0
@@ -214,6 +214,8 @@ def factors(cases, asof, dimension):
         if dimension=='schooling':
             value = case.get('school_years')
             group = '0–8' if isinstance(value,(int,float)) and value<=8 else '9+' if isinstance(value,(int,float)) else None
+        elif dimension=='intake':
+            group = (intake_categories or {}).get(case['id'])
         elif dimension=='course':
             group = 'course_yes' if any(r.get('Art') in ('Förderangebot Sprache','Sprachkurs im erweiterten Verfahren (N)') and r.get('Start')
                       and r['Start']<=goal['deadline'].isoformat() for r in case['tables']['education']) else 'course_none'

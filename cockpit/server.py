@@ -238,7 +238,11 @@ class Handler(BaseHTTPRequestHandler):
             if role=='worker':
                 cases = [c for c in cases if c['worker']==auth['assignment']]
             if route=='overview':
-                return self.page(route,ui.overview(self.lang,self.snapshot,cases,role=='manager',query.get('factor','age')))
+                dimension = query.get('factor','age')
+                intake_categories = {}
+                if dimension=='intake' and self.snapshot['source']=='synthetic':
+                    intake_categories = dict(db.execute('SELECT person,category FROM intake WHERE snapshot=?',(self.snapshot['id'],)))
+                return self.page(route,ui.overview(self.lang,self.snapshot,cases,role=='manager',dimension,intake_categories))
             if route=='queue':
                 return self.page(route,ui.queue(self.lang,cases,query.get('q','')[:64],max(1,int(query.get('page','1'))),query.get('state','')))
             if route=='case':
@@ -348,7 +352,8 @@ class Handler(BaseHTTPRequestHandler):
             if result['mode']=='review':
                 options = ''.join(f'<option value="{key}" {"selected" if key in result["suggestions"] else ""}>{text(lang,key)}</option>'
                                   for key in insights.CATEGORIES)
-                feedback = ui.post('/intake-save',self.csrf,f'<p>{esc(result["person"])}</p>'
+                extraction = f'<p>{text(lang,"ocr_review")}</p>' if result.get('extraction')=='ocr' else ''
+                feedback = extraction + ui.post('/intake-save',self.csrf,f'<p>{esc(result["person"])}</p>'
                     f'<input type="hidden" name="person" value="{esc(result["person"])}">'
                     f'<label>{text(lang,"category")} <select name="category">{options}</select></label>'+ui.action(lang,'review_save'))
             else:
@@ -377,6 +382,8 @@ def main():
     bootstrap.add_argument('role',choices=('judge','worker','manager','importer'))
     bootstrap.add_argument('--assignment',default='')
     commands.add_parser('seed')
+    snapshot_backup = commands.add_parser('backup')
+    snapshot_backup.add_argument('destination', type=Path)
     seeds = commands.add_parser('fixtures')
     seeds.add_argument('--output',default='runtime/fixtures')
     seeds.add_argument('--people',type=int,default=144)
@@ -394,9 +401,14 @@ def main():
                 (directory/data.SCHEMA[key]['template']).write_bytes(blob)
         return
     path = Path(args.db)
+    if args.command=='backup' and not path.is_file():
+        parser.error('The source database does not exist')
     path.parent.mkdir(exist_ok=True,parents=True)
     db = data.connect(path)
-    if args.command=='account':
+    if args.command=='backup':
+        data.backup(db,args.destination)
+        print('Verified SQLite backup created')
+    elif args.command=='account':
         account(db,args.username,os.getenv('COCKPIT_PASSWORD') or getpass(),args.role,args.assignment)
     elif args.command=='import':
         try:

@@ -1,4 +1,7 @@
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from subprocess import run
+from zlib import compress
 from shutil import which
 from unittest import TestCase, skipUnless
 from sys import platform
@@ -16,6 +19,10 @@ def pdf(lines):
        f'<< /Length {len(contents)} >>\nstream\n{contents}endstream'.encode(),
        b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
     ]
+    return serialize_pdf(objects)
+
+
+def serialize_pdf(objects):
     blob = bytearray(b'%PDF-1.4\n')
     offsets = []
     for i,obj in enumerate(objects,1):
@@ -37,6 +44,29 @@ class IntakeTests(TestCase):
         self.assertEqual(result,{'mode':'review','person':'DEMO-00001','suggestions':['scheduling']})
         self.assertEqual(suggest(payload,{})['mode'],'manual')
         self.assertEqual(suggest(pdf([]),{'SYN-Z00001':'DEMO-00001'})['mode'],'manual')
+
+
+    @skipUnless(which('pdftoppm') and which('tesseract'),'local OCR tools')
+    def test_image_only_pdf_requires_human_review(self):
+        with TemporaryDirectory() as directory:
+            source = Path(directory)/'source.pdf'
+            source.write_bytes(pdf(['ZEMIS: SYN-Z00001','childcare scheduling']))
+            rendered = run(['pdftoppm','-f','1','-l','1','-scale-to','1200','-gray',str(source)],
+                           check=True,capture_output=True).stdout
+        header,width_height,depth,pixels = rendered.split(b'\n',3)
+        self.assertEqual((header,depth),(b'P5',b'255'))
+        width,height = width_height.split()
+        data = compress(pixels)
+        commands = b'q 612 0 0 792 0 0 cm /Im Do Q'
+        image_pdf = serialize_pdf([
+           b'<< /Type /Catalog /Pages 2 0 R >>',
+           b'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+           b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /XObject << /Im 5 0 R >> >> >>',
+           b'<< /Length %d >>\nstream\n%s\nendstream' % (len(commands),commands),
+           b'<< /Type /XObject /Subtype /Image /Width %s /Height %s /BitsPerComponent 8 /ColorSpace /DeviceGray /Filter /FlateDecode /Length %d >>\nstream\n%s\nendstream' % (width,height,len(data),data),
+        ])
+        result = suggest(image_pdf,{'SYN-Z00001':'DEMO-00001'})
+        self.assertEqual(result,{'mode':'review','person':'DEMO-00001','suggestions':['scheduling'],'extraction':'ocr'})
 
 
 class SeriesTests(TestCase):

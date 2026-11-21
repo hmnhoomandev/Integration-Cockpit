@@ -1,6 +1,7 @@
 """Bounded OOXML reader and portable workbook writer."""
 from datetime import date, timedelta
 from html import escape
+from math import isfinite
 from io import BytesIO
 from pathlib import PurePosixPath
 from xml.etree import ElementTree as ET
@@ -31,7 +32,7 @@ def read(blob):
             raise ValueError('active_content')
         def xml(name):
             raw = archive.read(name)
-            if re.search(rb'<!DOCTYPE|<!ENTITY', raw, re.I):
+            if b'\x00' in raw or re.search(rb'<!DOCTYPE|<!ENTITY', raw, re.I):
                 raise ValueError('xml_declaration')
             return ET.fromstring(raw)
         workbook = xml('xl/workbook.xml')
@@ -48,12 +49,38 @@ def read(blob):
             strings = [''.join(t.text or '' for t in e.iter('{'+NS+'}t')) for e in xml('xl/sharedStrings.xml')]
         props = workbook.find('{*}workbookPr')
         mac = props is not None and props.get('date1904') in ('1','true')
-        root = xml(path)
-        if root.find('.//{*}f') is not None:
-            raise ValueError('formula')
-        for index, row in enumerate(root.findall('.//{*}row'), 1):
-            if index > 150_001:
+        with archive.open(path) as sheet:
+            yield from sheet_rows(sheet, strings, mac)
+
+
+class SafeXML:
+    def __init__(self, stream):
+        self.stream = stream
+        self.tail = b''
+
+    def read(self, size):
+        data = self.stream.read(size)
+        if b'\x00' in data or re.search(rb'<!DOCTYPE|<!ENTITY', self.tail + data, re.I):
+            raise ValueError('xml_declaration')
+        self.tail = data[-12:] if len(data) >= 12 else (self.tail + data)[-12:]
+        return data
+
+
+def sheet_rows(sheet, strings, mac):
+    stack = []
+    index = 0
+    for event, row in ET.iterparse(SafeXML(sheet), events=('start','end')):
+        if event == 'start':
+            if row.tag == '{'+NS+'}f':
+                raise ValueError('formula')
+            stack.append(row)
+            continue
+        stack.pop()
+        if row.tag == '{'+NS+'}row' and stack and stack[-1].tag == '{'+NS+'}sheetData':
+            index += 1
+            if index > 300_001:
                 raise ValueError('row_limit')
+            parent = stack[-1]
             values = {}
             for cell in row.findall('{*}c'):
                 address = cell.get('r','')
@@ -71,10 +98,15 @@ def read(blob):
                     val = strings[int(val)]
                 elif kind == 'n' and val:
                     val = float(val)
+                    if not isfinite(val):
+                        raise ValueError('invalid_number')
                 elif kind == 'd' and val:
                     val = val.split('T')[0]
                 values[pos] = val
-            yield int(row.get('r',index)), [values.get(i) for i in range(1,max(values,default=0)+1)], mac
+            result = int(row.get('r',index)), [values.get(i) for i in range(1,max(values,default=0)+1)], mac
+            parent.remove(row)
+            row.clear()
+            yield result
 
 
 def excel_date(value, mac=False):

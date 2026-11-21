@@ -97,6 +97,7 @@ COPY = {
  'assumptions':('Deutsch als Demosprache; Alter am Stichtag; Ausbildungsbeginn zählt; keine Zusammenrechnung paralleler Stellen; Unterstützungsabdeckung nur für synthetische Daten als vollständig behandelt.','German is the demo proof language; age is measured on the report date; enrolment qualifies; concurrent jobs are evaluated separately; complete assistance coverage is assumed for synthetic data only.','L’allemand sert de langue de référence pour la démo. Âge à la date du rapport, début de formation retenu, emplois simultanés évalués séparément et couverture complète supposée pour les seules données synthétiques.'),
  'review_save':('Kategorie bestätigen','Confirm category','Confirmer la catégorie'),
  'pdf_review':('PDF lokal auswerten','Review PDF locally','Examiner le PDF localement'),
+ 'ocr_review':('OCR-Vorschlag. ZEMIS und Kategorie am Original prüfen.','OCR suggestion. Check ZEMIS and the category against the original.','Suggestion OCR. Vérifier le ZEMIS et la catégorie sur l’original.'),
  'manual':('Manuelle Prüfung erforderlich','Manual review required','Vérification manuelle nécessaire'),
  'category':('Kategorie','Category','Catégorie'),
  'scenario2027':('Szenario 2027','2027 scenario','Scénario 2027'),
@@ -188,7 +189,7 @@ def layout(lang,active,body,account=None,csrf='',snapshot=None):
 <main id="main">{body}<footer class="photo-credit">{'<a href="https://commons.wikimedia.org/wiki/File:Bern_Altstadt_von_Rosengarten_20211007.jpg">Bern · Daniel Kraft</a> · <a href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>' if active in ('overview','login') else ''}</footer></main></div></body></html>'''
 
 
-def overview(lang,snapshot,cases,management,dimension='age'):
+def overview(lang,snapshot,cases,management,dimension='age',intake_categories=None):
     s = rules.counts(cases,0)
     metrics = (('people',len(cases)),('homes',len({c['home'] for c in cases})),('met',s['achieved']),
                ('follow',sum(s[key] for key in ('risk','overdue','review'))))
@@ -206,9 +207,9 @@ def overview(lang,snapshot,cases,management,dimension='age'):
     factor_panel = ''
     if snapshot['source']=='synthetic':
         from datetime import date
-        breakdown,total,missing = rules.factors(cases,date.fromisoformat(snapshot['asof']),dimension)
+        breakdown,total,missing = rules.factors(cases,date.fromisoformat(snapshot['asof']),dimension,intake_categories)
         choices = ''.join(f'<a class="chip" href="/overview?factor={k}" {"aria-current=page" if k==dimension else ""}>{text(lang,k)}</a>'
-                          for k in ('age','schooling','course'))
+                          for k in ('age','schooling','course','intake'))
         rendered = table([tr(lang,'category'),'n',tr(lang,'met'),'95% CI'],
           ((text(lang,label),esc(n) if n else text(lang,'suppressed'), f'{k/n:.1%}' if n else '—',
             f'{band[0]:.0%}–{band[1]:.0%}' if band else '—') for label,n,k,band in breakdown))
