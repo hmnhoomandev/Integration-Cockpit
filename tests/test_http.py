@@ -22,7 +22,7 @@ class HTTPTests(TestCase):
         db=data.connect(cls.path)
         cls.first,cls.second = [data.load_files(db,data.seed(d).values(),d,'synthetic')[0] for d in data.MONTHS]
         cls.password=secrets.token_urlsafe(20)
-        for name,role,assignment in [('judging','judge',''),('worker','worker','B'),('manager','manager','')]:
+        for name,role,assignment in [('judging','judge',''),('worker','worker',data.DEMO_WORKERS[1]),('manager','manager','')]:
             account(db,name,cls.password,role,assignment)
         db.close()
         cls.server=App(('127.0.0.1',0),cls.path,False)
@@ -109,8 +109,8 @@ class HTTPTests(TestCase):
         self.assertEqual(status,200)
         with ZipFile(BytesIO(report)) as archive:
             self.assertIn(b'missing_source',archive.read('xl/worksheets/sheet3.xml'))
-            self.assertIn(b'2026-09-30',archive.read('xl/worksheets/sheet1.xml'))
-            self.assertIn(b'2026-10-31',archive.read('xl/worksheets/sheet1.xml'))
+            self.assertIn(b'<v>46295</v>',archive.read('xl/worksheets/sheet1.xml'))
+            self.assertIn(b'<v>46326</v>',archive.read('xl/worksheets/sheet1.xml'))
             self.assertIn(b'SHA-256',archive.read('xl/worksheets/sheet2.xml'))
             self.assertFalse(any(b'DEMO-00001' in archive.read(name) for name in archive.namelist()))
         self.cookies.clear()
@@ -143,6 +143,40 @@ class HTTPTests(TestCase):
             self.assertNotIn('Bestätigte Kategorie'.encode(),self.request('/intake')[1])
         finally:
             self.server.hosted = False
+
+    def test_local_judge_can_switch_to_restricted_views(self):
+        csrf = self.login('judging')
+        self.assertEqual(self.request('/demo-role',{'csrf':csrf,'role':'worker'})[0],303)
+        self.assertEqual(self.request('/case/DEMO-00003')[0],404)
+        self.assertEqual(self.request('/demo-role',{'csrf':csrf,'role':'manager'})[0],303)
+        self.assertEqual(self.request('/queue')[0],403)
+        self.assertIn('Stufe 1'.encode(),self.request('/overview')[1])
+        self.assertEqual(self.request('/demo-role',{'csrf':csrf,'role':'judge'})[0],303)
+        self.assertEqual(self.request('/case/DEMO-00003')[0],200)
+
+    def test_help_privacy_and_planning_pages(self):
+        status, page = self.request('/privacy')
+        self.assertEqual(status,200)
+        self.assertIn('Wer sieht was'.encode(),page)
+        self.login('worker')
+        guide = self.request('/help')[1]
+        self.assertIn(b'href="/overview"',guide)
+        self.assertNotIn(b'href="/forecast">',guide)
+        self.assertEqual(self.request('/language/en?view=/privacy')[0],303)
+        self.assertIn(b'Who sees what',self.request('/privacy')[1])
+        self.cookies.clear()
+        self.login('judging')
+        plan = self.request('/forecast?rate_a1=1000&rate_work=0&rate_household=0')[1]
+        for anchor in (b'id="payments"',b'id="scenario"',b'id="zemis"',b'id="arrivals"',b'state=record',b'state=zemis'):
+            self.assertIn(anchor,plan)
+        self.assertRegex(plan.decode(),r'<strong>CHF \d+’000</strong>')
+        self.assertEqual(self.request('/queue?state=zemis')[0],200)
+        self.assertIn(b'case-link',self.request('/queue?state=record')[1])
+        self.cookies.clear()
+        self.login('manager')
+        plan = self.request('/forecast')[1]
+        self.assertIn(b'id="zemis"',plan)
+        self.assertNotIn(b'state=zemis',plan)
 
     def test_demo_personas_apply_backend_permissions_and_preserve_locale_context(self):
         self.server.hosted = True
@@ -184,7 +218,7 @@ class HTTPTests(TestCase):
         self.assertEqual(status,200)
         self.assertIn(b'2027-01-01',page)
         self.assertIn(b'2026-09-30',page)
-        self.assertIn(b'+2',page)
+        self.assertIn(b'+6',page)
         self.cookies.clear()
         self.login('worker')
         status, page = self.request('/ai?intent=monthly_change')
@@ -199,9 +233,11 @@ class HTTPTests(TestCase):
             for path in ('/queue','/reports','/ai','/forecast','/intake','/export'):
                 self.assertEqual(self.request(path)[0],200)
         self.assertEqual(self.request('/seed',{'csrf':csrf,'date':data.MONTHS[0]})[0],303)
-        self.assertIn('2026-09-30'.encode(),self.request('/case/DEMO-00001')[1])
+        self.assertIn(b'30.09.2026',self.request('/case/DEMO-00001')[1])
         self.assertEqual(self.request('/seed',{'csrf':csrf,'date':data.MONTHS[1]})[0],303)
-        self.assertIn('2026-10-12'.encode(),self.request('/case/DEMO-00001')[1])
+        october = self.request('/case/DEMO-00001')[1]
+        self.assertIn(b'12.10.2026',october)
+        self.assertIn(b'Sprachstand',october)
         db=data.connect(self.path)
         with db:
             db.execute('UPDATE sessions SET expires=0 WHERE username="judging"')

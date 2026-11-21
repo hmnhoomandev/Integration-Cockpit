@@ -175,7 +175,8 @@ class Handler(BaseHTTPRequestHandler):
         if not post and path=='/health':
             return self.respond(200,'ok','text/plain')
         assets = {'app.css':'text/css; charset=utf-8','bern.jpg':'image/jpeg',
-                  'bern-canton.png':'image/png','stadt-bern.png':'image/png','sem-shield.svg':'image/svg+xml'}
+                  'bern-flag.png':'image/png','stadt-bern-logo.png':'image/png',
+                  'stadt-bern-shield.png':'image/png','sem-shield.svg':'image/svg+xml'}
         if not post and path.startswith('/static/') and path[8:] in assets:
             asset = ROOT / path.lstrip('/')
             if asset.is_file():
@@ -189,7 +190,7 @@ class Handler(BaseHTTPRequestHandler):
             view = '/'+values.get('view',[''])[0].lstrip('/')
             if view=='/case':
                 view='/queue'
-            routes = {'/login','/overview','/queue','/reports','/ai','/forecast','/intake'}
+            routes = {'/login','/overview','/queue','/reports','/ai','/forecast','/intake','/help','/privacy'}
             if view not in routes and not re.fullmatch(r'/case/[A-Za-z0-9._~%\-]{1,180}',view):
                 view = '/'
             filters = {key:values[key][0][:64] for key in ('q','state','page','goal','factor','topic','intent','asof') if key in values}
@@ -204,13 +205,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.identity = db.execute('SELECT a.username,a.role,a.assignment,s.csrf,s.selected FROM sessions s JOIN accounts a USING(username) WHERE token=? AND expires>?',
                                            (digest(token),int(time.time()))).fetchone()
             if not self.identity:
+                if path=='/privacy' and not post:
+                    return self.page('privacy',ui.privacy(self.lang))
                 if path!='/login':
                     return self.redirect('/login')
                 return self.signin(db,post,cookie_value('login_csrf'))
             auth = self.identity
             self.csrf = auth['csrf']
             role = auth['role']
-            self.demo_switch = self.server.hosted and role=='judge'
+            self.demo_switch = role=='judge'
             if self.demo_switch:
                 if path=='/demo-role' and post:
                     fields,_ = self.form(8192)
@@ -230,10 +233,13 @@ class Handler(BaseHTTPRequestHandler):
                 if persona:
                     role = persona['role']
                     auth = dict(auth)
-                    auth.update(role=role,assignment='A' if role=='worker' else '')
+                    auth.update(role=role,assignment=data.DEMO_WORKERS[0] if role=='worker' else '')
                     self.identity = auth
             if path in ('/','/login') and not post:
                 return self.redirect('/reports' if role=='importer' else '/overview')
+            if path in ('/help','/privacy') and not post:
+                self.snapshot = data.snapshot_metadata(db,auth['selected'],self.server.hosted)
+                return self.page(path[1:],ui.guide(self.lang,role) if path=='/help' else ui.privacy(self.lang))
             allowed = {
               'judge':{'overview','queue','case','reports','export','ai','forecast','forecast-upload','forecast-reset','intake','intake-save','intake-demo','seed','seed-invalid','quality','snapshot','import','analysis-export','logout'},
               'worker':{'overview','queue','case','reports','export','ai','intake','intake-save','intake-demo','snapshot','analysis-export','logout'},
@@ -320,6 +326,8 @@ class Handler(BaseHTTPRequestHandler):
                 if dimension=='intake' and self.snapshot['source']=='synthetic':
                     if self.snapshot['asof']==data.PHASE5_MONTH:
                         intake_categories.update(data.phase5_categories(cases))
+                    elif self.snapshot['asof'] in data.MONTHS:
+                        intake_categories.update(data.story_intake(cases))
                     if self.server.hosted:
                         approved = db.execute('SELECT category FROM intake_demo WHERE session=? AND snapshot=?',
                                               (digest(token),self.snapshot['id'])).fetchone()
@@ -336,11 +344,11 @@ class Handler(BaseHTTPRequestHandler):
                 trend = self.monthly_trend(db,role,auth['assignment']) if self.snapshot['source']=='synthetic' else ()
                 return self.page(route,ui.overview(self.lang,self.snapshot,cases,role=='manager',dimension,intake_categories,goal,trend))
             if route=='queue':
-                return self.page(route,ui.queue(self.lang,cases,query.get('q','')[:64],max(1,int(query.get('page','1'))),query.get('state','')))
+                return self.page(route,ui.queue(self.lang,cases,query.get('q','')[:64],max(1,int(query.get('page','1'))),query.get('state',''),date.fromisoformat(self.snapshot['asof'])))
             if route=='case':
                 identifier = unquote(path.split('/')[-1])
                 case = next((c for c in cases if c['id']==identifier),None)
-                return self.page('case',ui.detail(self.lang,case) if case else ui.heading(self.lang,'empty'),200 if case else 404)
+                return self.page('case',ui.detail(self.lang,case,date.fromisoformat(self.snapshot['asof'])) if case else ui.heading(self.lang,'empty'),200 if case else 404)
             if route=='export':
                 blob = xlsx.write(ui.export(self.lang,self.snapshot,cases,role))
                 return self.respond(200,blob,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -352,7 +360,7 @@ class Handler(BaseHTTPRequestHandler):
                 candidate = rules.evaluate(self.snapshot,tables,candidate=True) if self.snapshot['source']=='synthetic' else None
                 rates = [min(100000,max(0,int(query.get('rate_'+key,'0')))) for key in ('a1','work','household')]
                 return self.page(route,ui.forecast(self.lang,report,rates,cases,series,not self.server.hosted,
-                                                   self.csrf,candidate))
+                                                   self.csrf,candidate,role=='judge'))
             if route in ('intake','intake-save','intake-demo'):
                 return self.intake(db,route,post,fields if post else {},files if post else [],tables,cases,digest(token))
             return self.respond(404)
@@ -505,10 +513,10 @@ class Handler(BaseHTTPRequestHandler):
                 extraction = f'<p>{text(lang,"ocr_review")}</p>' if result.get('extraction')=='ocr' else ''
                 feedback = extraction + ui.post('/intake-save',self.csrf,f'<p>{esc(result["person"])}</p>'
                     f'<input type="hidden" name="person" value="{esc(result["person"])}">'
-                    f'<label>{text(lang,"category")} <select name="category">{options}</select></label>'+ui.action(lang,'review_save'))
+                    f'<label>{text(lang,"category")} <select name="category">{options}</select></label>'+ui.action(lang,'review_save')+ui.tip(lang,'help_review_save'))
             else:
                 feedback = f'<p role="status">{text(lang,"manual")}</p>'
-        sample = ui.post('/intake-demo',self.csrf,ui.action(lang,'intake_sample'))
+        sample = ui.post('/intake-demo',self.csrf,ui.action(lang,'intake_sample')+ui.tip(lang,'help_pdf_sample'))
         if self.server.hosted:
             saved = db.execute('SELECT category FROM intake_demo WHERE session=? AND snapshot=?',
                                (session,self.snapshot['id'])).fetchone()
@@ -520,11 +528,11 @@ class Handler(BaseHTTPRequestHandler):
             approvals = f'<p>{text(lang,"rows")} {len(saved)}</p>'
         else:
             approvals = ui.table(['ID',ui.tr(lang,'category')],((esc(r['person']),text(lang,r['category'])) for r in saved if r['person'] in authorized))
-        form = ui.post('/intake',self.csrf,'<label>PDF <input type="file" name="report" accept=".pdf" required></label>'+ui.action(lang,'pdf_review'),True)
+        form = ui.post('/intake',self.csrf,'<label>PDF <input type="file" name="report" accept=".pdf" required></label>'+ui.action(lang,'pdf_review')+ui.tip(lang,'help_pdf'),True)
         manual_options = ''.join(f'<option value="{k}">{text(lang,k)}</option>' for k in insights.CATEGORIES)
         manual = ui.post('/intake-save',self.csrf,
             f'<label>ZEMIS <input name="zemis" required></label><label>{text(lang,"category")} '
-            f'<select name="category">{manual_options}</select></label>'+ui.action(lang,'review_save'))
+            f'<select name="category">{manual_options}</select></label>'+ui.action(lang,'review_save')+ui.tip(lang,'help_manual'))
         return self.page('intake',ui.heading(lang,'intake')+
                          f'<section class="panel">{form}{sample}{feedback}{approvals}<details><summary>{text(lang,"manual")}</summary>{manual}</details></section>')
 
@@ -549,7 +557,7 @@ def main():
     snapshot_backup.add_argument('destination', type=Path)
     seeds = commands.add_parser('fixtures')
     seeds.add_argument('--output',default='runtime/fixtures')
-    seeds.add_argument('--people',type=int,default=144)
+    seeds.add_argument('--people',type=int,default=None)
     imp = commands.add_parser('import')
     imp.add_argument('date')
     imp.add_argument('workbooks',nargs=11)

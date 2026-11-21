@@ -2,16 +2,38 @@
 
 [English](../README.md) · [Français](README.fr.md)
 
-Der Hackathon-Prototyp verarbeitet elf monatliche Excel-Exporte des Asylsozialdienstes der Stadt Bern als gemeinsamen Stichtag. Er zeigt Fristen, Nachweise und nächste Prüfschritte pro autorisiertem Fall. Die Leitung erhält aggregierte Kennzahlen.
+Ein Hackathon-Prototyp für den Asylsozialdienst der Stadt Bern. Das Cockpit liest die elf monatlichen Excel-Exporte und beantwortet drei Fragen:
 
-## Demo
+- Wen kontaktiere ich diese Woche und warum?
+- Wie viele Personen erreichen die Ziele fristgerecht, pro Fallführung und pro Einreisejahr?
+- Was bringt das Erreichte ein, und was ändert 2027?
 
-[Temporärer HTTPS-Zugang](https://listening-brian-served-upcoming.trycloudflare.com/login). Zugangsdaten werden separat verteilt. Unter **Daten & Berichte** zuerst September 2026 wählen und Fall **DEMO-00001** öffnen. A1 ist bis 16. Oktober fällig. Nach dem Oktober-Import ist ein fide-Nachweis vom 12. Oktober sichtbar. Excel herunterladen, dann Kohorten, Regelassistent und Prognose ansehen.
+Alles läuft auf einem Rechner. Die Daten liegen in einer lokalen Datei, und der Browser lädt nichts von fremden Adressen.
 
-## Lokal
+## Starten
 
-Im Projektverzeichnis `python3 -m cockpit.server serve --demo` ausführen und http://127.0.0.1:8000 öffnen. Python 3.12+ genügt für die Kernabläufe. Die PDF-Analyse verwendet lokal Poppler oder macOS PDFKit. Tests laufen mit `python3 -m unittest discover -s tests -v`.
+Benötigt wird Python 3.12 oder neuer. Zusätzliche Pakete sind nicht nötig.
 
-Sprachnachweise, Arbeit oder Ausbildung und die finanzielle Selbstständigkeit werden regelbasiert ausgewertet. Die Arbeitssicht ist auf Fälle der eigenen Zuständigkeit begrenzt. Die Prognose vergleicht rein aggregierte Monatszahlen mit einfachen Referenzmodellen. Der Assistent ruft geprüfte Quellen lokal ab. Die Demo verwendet synthetische Fallakten und zeigt öffentliche Vergleichszahlen mit separater Herkunft.
+```sh
+python3 -m cockpit.server serve --demo
+```
 
-[Abnahme und offene Punkte](ACCEPTANCE.md) · [Quellen und Regeln](SOURCES.md) · [Sicherheit](../SECURITY.md)
+Danach <http://127.0.0.1:8000> öffnen. Beim ersten Start erscheinen Benutzername und Passwort einmalig im Terminal.
+
+1. **Fallführung → Diese Woche:** rund 170 Kontakte, sortiert nach Wirkung.
+2. **DEMO-00001 öffnen.** Im September ist A1 bis 16.10.2026 fällig. Nach dem Laden des Oktobers ist ein fide-Nachweis vom 12.10.2026 da, aber der offizielle Eintrag fehlt noch.
+3. **Übersicht:**
+   - Ist und Soll pro Fallführung und Einreisejahr.
+   - Gruppenanalyse mit Unsicherheitsbereich: Sprachkurs in den ersten sechs Monaten 73 %, später 28 %.
+4. **Planung:**
+   - Abgeltung: 103 erreichte Ziele sind noch nicht abrechenbar.
+   - Szenario 2027.
+   - ZEMIS-Abgleich.
+5. **Demo-Rolle** (unten in der Seitenleiste): Fallführung sieht nur eigene Fälle, Leitung nur Summen.
+6. **Excel herunterladen:** echte Daten im Schweizer Format, mit Ampelfarben.
+
+Das gelbe **!** neben jedem Bedienelement erklärt, was es tut. **Hilfe** und **Datenschutz** stehen in der Navigation.
+
+Tests: `python3 -m unittest discover -s tests -v`
+
+[Quellen und Regeln](SOURCES.md) · [Sicherheit](../SECURITY.md) · [Pitch](PITCH.md)

@@ -19,11 +19,26 @@ Edition 2026-11-21. The original municipal challenge PDFs are supplied privately
 | --- | --- | --- |
 | G1, G2 scope | Explicit VA, F-FL, B-FL, B-RSFL, B-SL, age at report date, responsibility in effect | Suffix status treatment, age reference, late-in-window birthdays and active scope |
 | G1 | A1+ German; telc/fide indicated in the source; separately display official achievement evidence; three calendar years from entry | Accepted language, proof evidence, missing dates, validated official-versus-computed precedence |
-| G2 | ≥60% in each verified primary-market row; adjacent/overlapping qualifying intervals unioned; enrolment in Sek II or tertiary | Exact employment categories, adjacency, whether education starts or completes the goal, date inclusivity |
+| G2 | ≥60% per Erwerb row; adjacent/overlapping qualifying intervals unioned; enrolment in Sek II or tertiary. The Erwerb template only offers `unselbstständig` / `selbstständig`, so both count as first labour market unless employer or remark names an employment or integration programme (`2. Arbeitsmarkt`, `Beschäftigungsprogramm`, …), which is excluded. A missing Erwerbsstatus goes to review | How the export marks second-labour-market jobs, adjacency, whether education starts or completes the goal, date inclusivity |
+| Identifiers | Whole-number Klientennummer / ZEMIS cells (as in the templates) are read as text, e.g. `12345`. Fractional or out-of-range numbers are rejected | Whether exports can contain leading zeros that Excel would drop |
 | G3 | Once per Dossier-Nr.; responsibility cutoff if members agree; coverage treated as complete for generated fixtures only | Coverage declarations, qualifying support types, transferred or changing household membership |
-| 2027 | VA/F-FL illustration uses five calendar years from entry; source dates unaffected | Real transition cohort, operational dates and tariffs |
+| 2027 | VA/F-FL illustration uses five calendar years from entry; source dates unaffected. A VA/F-FL member without a dated entry follows the household's shifted cutoff when all members share the same exported end | Real transition cohort, operational dates and tariffs |
 | Risk colors | Deadline runway of 90 days, with explicit evidence review and late results | Triage policy and appropriate operational stages |
 
 ## Source mapping
 
 Klient anchors clients by Klientennummer and ZEMIS. Events determine entry. Asylverfahrensstand supplies history and status crosschecks. Sprachstand supplies proof. Integrationszielerreichung preserves formal evidence. Erwerb and Integrationsförderung und Ausbildung support goal 2. Dossierperson links dated household membership. Finanzielle Unterstützung supplies household coverage events. Unterbringung supplies context. ZEMIS Tätigkeit supports employment reconciliation. The intake PDF can link only through an explicit verified header ZEMIS.
+
+## Synthetic demo caseload
+
+`python3 -m cockpit.server fixtures` writes the two demo months (30.09. and 31.10.2026): about 1,400 fictional people in about 510 households, six fictional caseworkers, generated from seed 2026 with the value lists of the eleven templates. Both months share one history, so October adds new arrivals, asylum decisions and new evidence. Identifiers (`DEMO-…`, `SYN-Z…`, `SYN-H…`) are invented. The generator plants these relationships so the group analysis has something to find. They are not estimates of real outcomes:
+
+- A1 more likely with a language course in the first six months after entry
+- A1 more likely with more years of schooling and Latin-script literacy
+- A1 less likely with higher age at entry
+- A1 less likely for parents of small children; the demo months carry fictional, already confirmed Situationsanalyse categories (childcare scheduling, schooling, course, housing) for three of four adults
+- Employment more likely after an early course and with more schooling
+- A household leaves social assistance after a job of 70 %+ lasting 8+ months; one in four returns
+
+The course factor in the group analysis compares the time from entry to the first language course (within six months, later, none). Age bands are 16–24, 25–34 and 35+ at the report date.
+

@@ -78,7 +78,7 @@ class SnapshotTests(TestCase):
                 self.assertIsNone(workbook.testzip())
                 xml = workbook.read('xl/worksheets/sheet3.xml').decode()
                 self.assertIn('DEMO-00001',xml)
-                self.assertIn('2026-10-12',xml)
+                self.assertIn('<v>46307</v>',xml)  # 12.10.2026 as a real Excel date
                 self.assertIn('autoFilter',xml)
                 self.assertIn(ui.tr(lang,'attained'),xml)
         with ZipFile(BytesIO(xlsx.write(ui.export(0,snap,cases,'manager')))) as workbook:
@@ -89,9 +89,9 @@ class SnapshotTests(TestCase):
         baseline = rules.evaluate(snap,rows)
         trial = rules.evaluate(snap,rows,candidate=True)
         self.assertEqual(baseline[0]['goals'][0],trial[0]['goals'][0])
-        self.assertEqual(baseline[0]['goals'][1]['deadline'],date(2028,6,30))
+        self.assertEqual(baseline[0]['goals'][1]['deadline'],date(2030,10,16))
         self.assertEqual(trial[0]['goals'][1]['deadline'],date(2028,10,16))
-        self.assertEqual(trial[0]['goals'][2]['state'],'review')
+        self.assertEqual(trial[0]['goals'][2]['deadline'],date(2028,10,16))
         verified,unconfirmed,_ = rules.payments(baseline)[0]
         self.assertGreater(verified,0)
         self.assertGreater(unconfirmed,0)
@@ -104,13 +104,86 @@ class SnapshotTests(TestCase):
         for lang in range(3):
             tabs = ui.export(lang,snap,cases,'judge')
             _, total = tabs[ui.tr(lang,'control_totals')]
-            self.assertEqual(total[0],144)
+            self.assertEqual(total[0],len(cases))
             self.assertEqual(total[0],sum(total[1:4]))
             self.assertEqual(total[1],sum(total[4:7]))
             self.assertEqual(total[7],sum(total[8:10]))
             for key in ('worker','year'):
-                rows = tabs[ui.tr(lang,key)][1:]
+                *rows, last = tabs[ui.tr(lang,key)][1:]
                 self.assertEqual([sum(col) for col in zip(*(row[1:] for row in rows))],total)
+                self.assertEqual([cell.value for cell in last[1:]],total)
+
+    def test_real_exports_with_numeric_identifiers_import(self):
+        # The municipal templates store Klientennummer and ZEMIS numbers as number cells.
+        numeric = {}
+        def number(value):
+            if isinstance(value,str) and value.startswith(('DEMO-','SYN-Z')):
+                return int(value[5:]) + (90000000 if value.startswith('SYN-Z') else 0)
+            return value
+        for key,blob in data.seed(data.MONTHS[0]).items():
+            numeric[key] = xlsx.write({key:[[number(c) for c in cells] for _,cells,_ in xlsx.read(blob)]})
+        db = data.connect(':memory:')
+        try:
+            index,_ = data.load_files(db,numeric.values(),data.MONTHS[0],'local')
+            snapshot,rows = data.get_snapshot(db,index)
+            cases = rules.evaluate(snapshot,rows)
+        finally:
+            db.close()
+        self.assertEqual(cases[0]['id'],'1')
+        self.assertEqual(cases[0]['goals'][0]['deadline'],date(2026,10,16))
+
+    def test_goal2_uses_observed_employment_values(self):
+        asof, start, end = date(2026,10,31), date(2024,1,1), date(2029,1,1)
+        job = {'_line':2,'Von':'2025-01-01','Bis':None,'Pensum %':80,'Erwerbsstatus':'unselbstständig'}
+        tables = {'work':[job],'education':[]}
+        self.assertEqual(rules.goal2(tables,asof,start,end)['achieved'],date(2025,7,1))
+        programme = job | {'Bemerkungen':'Beschäftigungsprogramm (2. Arbeitsmarkt)'}
+        self.assertIsNone(rules.goal2({'work':[programme],'education':[]},asof,start,end)['achieved'])
+        unknown = job | {'Erwerbsstatus':None}
+        self.assertEqual(rules.goal2({'work':[unknown],'education':[]},asof,start,end)['reason'],'market_unknown')
+
+    def test_next_action_ranks_rescuable_deadlines_first(self):
+        september,october = (rules.evaluate(*data.get_snapshot(self.db,i)) for i in (self.first,self.second))
+        before = rules.next_action(september[0],date(2026,9,30))
+        self.assertEqual((before['key'],before['days'],before['week']),('act_g1_risk',16,True))
+        after = rules.next_action(october[0],date(2026,10,31))
+        self.assertEqual((after['key'],after['when']),('act_g1_record',date(2026,10,12)))
+        actions = [rules.next_action(c,date(2026,10,31)) for c in october]
+        self.assertFalse(any(a['week'] and a['key']=='act_g1_missed' for a in actions))
+        self.assertEqual(actions,[rules.next_action(c,date(2026,10,31)) for c in october])
+        page = ui.queue(0,october,'',1,'',date(2026,10,31))
+        self.assertIn('Diese Woche',page)
+        self.assertIn('class="tip"',page)
+
+    def test_on_screen_targets_match_excel_control_totals(self):
+        cases = rules.evaluate(*data.get_snapshot(self.db,self.second))
+        totals = dict(zip(rules.A1_TOTALS,rules.a1_totals(cases)))
+        for field in ('worker','entry'):
+            html = ui.a1_targets(0,cases,field)
+            last = html.rsplit('<tr>',1)[1]
+            cells = [c.split('</td>')[0] for c in last.split('<td>')[1:]]
+            self.assertEqual((int(cells[2]),int(cells[3])),(totals['scope_in'],totals['due_now']))
+        cases_by_course = rules.analysis(cases,date(2026,10,31),'course')[0]
+        self.assertTrue(all(n for _,n,_,_,_ in cases_by_course))
+
+    def test_demo_months_share_one_history(self):
+        september,october = (rules.evaluate(*data.get_snapshot(self.db,i)) for i in (self.first,self.second))
+        later = {c['id']:c for c in october}
+        self.assertGreater(len(october),len(september))
+        for case in september:
+            self.assertEqual((case['entry'],case['worker']),(later[case['id']]['entry'],later[case['id']]['worker']))
+        # Asylum decisions taken in October move people from N into scope.
+        self.assertTrue(any(c['status']=='N (Asylsuchende)' and later[c['id']]['status']!=c['status'] for c in september))
+
+    def test_2027_scenario_keeps_households_whole(self):
+        snapshot, rows = data.get_snapshot(self.db,self.second)
+        baseline, scenario = rules.evaluate(snapshot,rows), rules.evaluate(snapshot,rows,candidate=True)
+        followers = [c for c in scenario if c['entry'] is None and c['transition_end'] is not None]
+        self.assertTrue(followers)
+        for case in followers:
+            self.assertEqual({m['effective_end'] for m in scenario if m['home']==case['home']},{case['effective_end']})
+        self.assertEqual(rules.counts(scenario,2)['review'],rules.counts(baseline,2)['review'])
+        self.assertGreater(rules.counts(scenario,1)['overdue'],rules.counts(baseline,1)['overdue'])
 
     def test_phase4_work_and_household_fixture(self):
         month = data.PHASE4_MONTH

@@ -3,6 +3,7 @@ from datetime import date, timedelta
 from html import escape
 from math import isfinite
 from io import BytesIO
+from itertools import chain, islice
 from pathlib import PurePosixPath
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
@@ -125,38 +126,92 @@ def excel_date(value, mac=False):
     return date.fromisoformat(value)
 
 
+class Cell:
+    """A value with a named style from STYLES."""
+    __slots__ = ('value','style')
+
+    def __init__(self, value, style):
+        self.value, self.style = value, style
+
+
+# Fills and fonts follow the cockpit lights; every state cell also carries a symbol and text.
+STATE_COLOURS = {'achieved':('E2F2E9','1D6B45'),'ontrack':('FFF4C7','7A5B00'),'risk':('FCE3DC','9C2E14'),
+                 'overdue':('F6CFCB','8E1C14'),'late':('F6CFCB','8E1C14'),'review':('ECE6F8','57409A'),'na':('EFEAE3','6D625B')}
+STYLES = ['default','header','date','bold',*('state_'+k for k in STATE_COLOURS)]
+EPOCH = date(1899,12,30)
+
+
+def serial(value):
+    return (value-EPOCH).days
+
+
+def styles_xml():
+    fills = ['<fill><patternFill patternType="none"/></fill>','<fill><patternFill patternType="gray125"/></fill>',
+             '<fill><patternFill patternType="solid"><fgColor rgb="FF16110F"/></patternFill></fill>']
+    fonts = ['<font><sz val="11"/><name val="Calibri"/></font>','<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>',
+             '<font><b/><sz val="11"/><name val="Calibri"/></font>']
+    xfs = ['<xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>',
+           '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>',
+           '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/>',
+           '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" applyFont="1"/>']
+    for fill,font in STATE_COLOURS.values():
+        fills.append(f'<fill><patternFill patternType="solid"><fgColor rgb="FF{fill}"/></patternFill></fill>')
+        fonts.append(f'<font><b/><sz val="11"/><color rgb="FF{font}"/><name val="Calibri"/></font>')
+        xfs.append(f'<xf numFmtId="0" fontId="{len(fonts)-1}" fillId="{len(fills)-1}" borderId="0" applyFont="1" applyFill="1"/>')
+    return (f'<styleSheet xmlns="{NS}"><numFmts count="1"><numFmt numFmtId="164" formatCode="dd.mm.yyyy"/></numFmts>'
+            f'<fonts count="{len(fonts)}">{"".join(fonts)}</fonts><fills count="{len(fills)}">{"".join(fills)}</fills>'
+            '<borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+            f'<cellXfs count="{len(xfs)}">{"".join(xfs)}</cellXfs>'
+            '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>')
+
+
 def write(tabs):
     def entry(name):
         info = ZipInfo(name)
         info.compress_type = ZIP_DEFLATED
         return info
+    def cell(address, value, style):
+        if isinstance(value,Cell):
+            value, style = value.value, value.style
+        if value is None:
+            return f'<c r="{address}" s="{STYLES.index(style)}"/>' if style!='default' else ''
+        if isinstance(value,date):
+            value, style = serial(value), ('date' if style=='default' else style)
+        index = STYLES.index(style)
+        if type(value) in (int,float):
+            return f'<c r="{address}" s="{index}" t="n"><v>{value}</v></c>'
+        value = escape(re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]','',str(value)))
+        return f'<c r="{address}" s="{index}" t="inlineStr"><is><t xml:space="preserve">{value}</t></is></c>'
     out = BytesIO()
     with ZipFile(out,'w',ZIP_DEFLATED) as z:
         entries = list(tabs.items())
-        z.writestr(entry('[Content_Types].xml'), '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' + ''.join(f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' for i in range(1,len(entries)+1)) + '</Types>')
+        z.writestr(entry('[Content_Types].xml'), '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' + ''.join(f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' for i in range(1,len(entries)+1)) + '</Types>')
         z.writestr(entry('_rels/.rels'),f'<Relationships xmlns="{PKG}"><Relationship Id="rId1" Type="{REL}/officeDocument" Target="xl/workbook.xml"/></Relationships>')
-        z.writestr(entry('xl/_rels/workbook.xml.rels'),f'<Relationships xmlns="{PKG}">'+''.join(f'<Relationship Id="rId{i}" Type="{REL}/worksheet" Target="worksheets/sheet{i}.xml"/>' for i in range(1,len(entries)+1))+'</Relationships>')
+        z.writestr(entry('xl/_rels/workbook.xml.rels'),f'<Relationships xmlns="{PKG}">'+''.join(f'<Relationship Id="rId{i}" Type="{REL}/worksheet" Target="worksheets/sheet{i}.xml"/>' for i in range(1,len(entries)+1))
+                   +f'<Relationship Id="rId{len(entries)+1}" Type="{REL}/styles" Target="styles.xml"/></Relationships>')
         z.writestr(entry('xl/workbook.xml'),f'<workbook xmlns="{NS}" xmlns:r="{REL}"><sheets>'+''.join(f'<sheet name="{escape(name,quote=True)}" sheetId="{i}" r:id="rId{i}"/>' for i,(name,_) in enumerate(entries,1))+'</sheets></workbook>')
+        z.writestr(entry('xl/styles.xml'),styles_xml())
         for i,(_,rows) in enumerate(entries,1):
             with z.open(entry(f'xl/worksheets/sheet{i}.xml'),'w') as sheet:
-                sheet.write(f'<worksheet xmlns="{NS}"><sheetData>'.encode())
-                width = 1
+                rows = iter(rows)
+                head = next(rows,None)
+                width = max(1,len(head or ()))
+                # Column widths come from the first rows only, so large sheets still stream.
+                sample = list(islice(rows,50))
+                rows = chain(sample,rows)
+                def size(value):
+                    value = getattr(value,'value',value)
+                    return 10 if isinstance(value,date) else len(str(value)) if value is not None else 0
+                widths = ''.join(f'<col min="{c}" max="{c}" width="{max(10,min(70,max(size(r[c-1]) for r in [head,*sample] if len(r)>=c)+3))}" customWidth="1"/>'
+                                 for c in range(1,len(head or ())+1))
+                sheet.write((f'<worksheet xmlns="{NS}"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
+                             +(f'<cols>{widths}</cols>' if widths else '')+'<sheetData>').encode())
                 number = 0
-                for number, row in enumerate(rows,1):
+                for number, row in enumerate(chain([head] if head is not None else [],rows),1):
                     if number > 1048576:
                         raise ValueError('worksheet_row_limit')
-                    if number == 1:
-                        width = max(1,len(row))
-                    cells = []
-                    for column,value in enumerate(row,1):
-                        address = letters(column) + str(number)
-                        if value is None:
-                            continue
-                        if type(value) in (int,float):
-                            cells.append(f'<c r="{address}" t="n"><v>{value}</v></c>')
-                        else:
-                            value = escape(re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]','',str(value)))
-                            cells.append(f'<c r="{address}" t="inlineStr"><is><t xml:space="preserve">{value}</t></is></c>')
-                    sheet.write((f'<row r="{number}">'+''.join(cells)+'</row>').encode())
+                    style = 'header' if number==1 else 'default'
+                    cells = ''.join(cell(letters(column)+str(number),value,style) for column,value in enumerate(row,1))
+                    sheet.write((f'<row r="{number}">'+cells+'</row>').encode())
                 sheet.write(f'</sheetData><autoFilter ref="A1:{letters(width)}{max(1,number)}"/></worksheet>'.encode())
     return out.getvalue()

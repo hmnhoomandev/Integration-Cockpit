@@ -1,9 +1,11 @@
 """Server-rendered German, English and French interface."""
-from html import escape
+from html import escape, unescape
 from urllib.parse import urlencode, quote, parse_qs, urlsplit
 from itertools import chain
+from datetime import date
 
 from . import rules
+from .xlsx import Cell
 from .data import MONTHS, PHASE4_MONTH, PHASE5_MONTH
 from .insights import SOURCES, FSO, AGGREGATE_INTENTS, RULE_DATES
 
@@ -244,6 +246,8 @@ COPY = {
  'age':('Alter','Age','Âge'),
  'course_yes':('Sprachkurs erfasst','Language course recorded','Cours de langue enregistré'),
  'course_none':('Kein Sprachkurs erfasst','No language course recorded','Aucun cours de langue enregistré'),
+ 'course_early':('Sprachkurs in den ersten 6 Monaten','Language course within 6 months of entry','Cours de langue dans les 6 mois après l’arrivée'),
+ 'course_late':('Sprachkurs erst nach 6 Monaten','Language course after more than 6 months','Cours de langue après plus de 6 mois'),
  'observation':('Nur Kohorten mit abgelaufener A1-Frist','Cohorts with completed A1 follow-up','Cohortes dont le suivi A1 est terminé'),
  'missing':('Fehlende Angaben','Missing information','Données manquantes'),
  'timeline':('Verlauf','Timeline','Historique'),
@@ -262,8 +266,435 @@ COPY = {
 }
 
 
+COPY.update({
+ # Worker queue and next steps. Placeholders are filled with escaped values by say().
+ 'queue_lead':('Wen rufe ich diese Woche an, und warum?','Who do I call this week, and why?','Qui dois-je appeler cette semaine, et pourquoi ?'),
+ 'this_week':('Diese Woche','This week','Cette semaine'),
+ 'this_week_note':('{n} Kontakte, sortiert nach Wirkung: zuerst Fristen, die noch zu retten sind, dann fehlende Einträge für die Abgeltung.',
+                   '{n} contacts, ordered by impact: deadlines that can still be met first, then records missing for payment.',
+                   '{n} contacts, triés par impact : d’abord les délais encore tenables, puis les enregistrements manquants pour le paiement.'),
+ 'show_all_week':('Alle {n} anzeigen','Show all {n}','Afficher les {n}'),
+ 'all_cases':('Alle Fälle','All cases','Tous les dossiers'),
+ 'next_step':('Nächster Schritt','Next step','Prochaine étape'),
+ 'when':('Termin','Date','Échéance'),
+ 'lights_header':('Ampel: A1 · Arbeit · Haushalt','Lights: A1 · Work · Household','Feux : A1 · Travail · Ménage'),
+ 'ampel_legend':('Ampel: grün erreicht · gelb auf Kurs · rot gefährdet oder Frist verpasst · grau nicht relevant · violett ? Daten prüfen',
+                 'Traffic light: green reached · yellow on track · red at risk or deadline missed · grey not applicable · purple ? check data',
+                 'Feu : vert atteint · jaune en bonne voie · rouge à risque ou délai dépassé · gris non concerné · violet ? données à vérifier'),
+ 'in_days':('in {n} Tagen','in {n} days','dans {n} jours'),
+ 'days_ago':('vor {n} Tagen','{n} days ago','il y a {n} jours'),
+ 'today':('heute','today','aujourd’hui'),
+ 'week':('Diese Woche','This week','Cette semaine'),
+ 'act_g1_risk':('A1-Frist am {date} (in {days} Tagen): telc- oder fide-Prüfung anmelden',
+                'A1 deadline {date} (in {days} days): book a telc or fide exam',
+                'Délai A1 le {date} (dans {days} jours) : inscrire à un examen telc ou fide'),
+ 'act_g1_record':('A1-Nachweis vom {date} liegt vor, fehlt aber in der Integrationszielerreichung: nachtragen, damit abgegolten wird',
+                  'A1 proof dated {date} is on file but missing from Integrationszielerreichung: record it so it can be paid',
+                  'Justificatif A1 du {date} présent mais absent d’Integrationszielerreichung : l’enregistrer pour le paiement'),
+ 'act_g1_verify':('Zertifikat ohne telc/fide-Vermerk oder ohne Datum: Original prüfen',
+                  'Certificate without a telc/fide note or date: check the original',
+                  'Certificat sans mention telc/fide ou sans date : vérifier l’original'),
+ 'act_goal_record':('{goal} rechnerisch erreicht am {date}, kein offizieller Eintrag: Nachweis erfassen',
+                    '{goal} reached on {date} by the rules, but not officially recorded: record the evidence',
+                    '{goal} atteint le {date} selon les règles, sans enregistrement officiel : saisir le justificatif'),
+ 'act_zemis':('ZEMIS meldet eine Stelle, die in Erwerb fehlt: Arbeitsvertrag einholen',
+              'ZEMIS reports a job that is missing from Erwerb: ask for the employment contract',
+              'ZEMIS signale un emploi absent d’Erwerb : demander le contrat de travail'),
+ 'act_g2_verify':('Pensum oder Erwerbsstatus fehlt: Arbeitsvertrag prüfen','Workload or employment status missing: check the contract',
+                  'Taux ou statut d’emploi manquant : vérifier le contrat'),
+ 'act_g2_soon':('Stelle läuft: Ziel 2 am {date} erreicht, wenn sie ohne Unterbruch weiterläuft',
+                'Job ongoing: goal 2 is reached on {date} if it continues without a break',
+                'Emploi en cours : objectif 2 atteint le {date} s’il continue sans interruption'),
+ 'act_scope':('Status, Geburts- oder Einreisedatum unklar: Daten im Fallführungssystem korrigieren',
+              'Status, birth or entry date unclear: correct the record in the case system',
+              'Statut, date de naissance ou d’arrivée incertains : corriger le dossier'),
+ 'act_g3_review':('Haushalt: Unterstützungsverlauf oder Zuständigkeitsende unklar, prüfen',
+                  'Household: assistance history or end of responsibility unclear, review',
+                  'Ménage : historique d’aide ou fin de prise en charge incertains, à vérifier'),
+ 'act_g1_plan':('A1-Frist am {date} (in {days} Tagen): Kurs und Prüfung planen','A1 deadline {date} (in {days} days): plan course and exam',
+                'Délai A1 le {date} (dans {days} jours) : planifier cours et examen'),
+ 'act_g1_missed':('A1-Frist am {date} verpasst: Sprachförderung weiterführen, keine Abgeltung mehr',
+                  'A1 deadline {date} missed: continue language support, no longer payable',
+                  'Délai A1 du {date} dépassé : poursuivre le soutien linguistique, plus de paiement'),
+ 'act_none':('Kein Handlungsbedarf','No action needed','Aucune action requise'),
+ # Case explanations
+ 'what_means':('Was heisst das?','What does this mean?','Qu’est-ce que cela signifie ?'),
+ 'exp_achieved':('Erreicht am {achieved}, vor der Frist vom {deadline}.','Reached on {achieved}, before the deadline of {deadline}.',
+                 'Atteint le {achieved}, avant le délai du {deadline}.'),
+ 'exp_late':('Erreicht am {achieved}, aber nach der Frist vom {deadline}. Keine Abgeltung.','Reached on {achieved}, but after the deadline of {deadline}. Not payable.',
+             'Atteint le {achieved}, mais après le délai du {deadline}. Pas de paiement.'),
+ 'exp_ontrack':('Noch nicht erreicht. Frist am {deadline}, noch {days} Tage.','Not reached yet. Deadline {deadline}, {days} days left.',
+                'Pas encore atteint. Délai le {deadline}, encore {days} jours.'),
+ 'exp_risk':('Noch nicht erreicht, und die Frist am {deadline} ist in {days} Tagen.','Not reached, and the deadline {deadline} is in {days} days.',
+             'Pas atteint, et le délai du {deadline} est dans {days} jours.'),
+ 'exp_overdue':('Die Frist am {deadline} ist seit {days} Tagen abgelaufen, ohne gültigen Nachweis.','The deadline {deadline} passed {days} days ago without valid evidence.',
+                'Le délai du {deadline} est dépassé depuis {days} jours, sans justificatif valable.'),
+ 'exp_review':('Das Tool kann dieses Ziel nicht sicher beurteilen: {reason}.','The tool cannot assess this goal reliably: {reason}.',
+               'L’outil ne peut pas évaluer cet objectif de façon fiable : {reason}.'),
+ 'exp_na':('Nicht relevant: {reason}.','Not applicable: {reason}.','Non concerné : {reason}.'),
+ 'exp_official_yes':('Offiziell erfasst in Integrationszielerreichung am {dates}.','Officially recorded in Integrationszielerreichung on {dates}.',
+                     'Enregistré officiellement dans Integrationszielerreichung le {dates}.'),
+ 'exp_official_no':('Kein offizieller Eintrag in Integrationszielerreichung.','No official record in Integrationszielerreichung.',
+                    'Aucun enregistrement officiel dans Integrationszielerreichung.'),
+ 'evidence_rows':('Nachweise aus den Exporten','Evidence from the exports','Justificatifs des exports'),
+ 'no_evidence':('Keine passenden Zeilen in den Exporten.','No matching rows in the exports.','Aucune ligne correspondante dans les exports.'),
+ 'row':('Zeile','row','ligne'),
+ 'open':('offen','open','en cours'),
+ 'household_id':('Haushalt (Dossier-Nr.)','Household (Dossier-Nr.)','Ménage (Dossier-Nr.)'),
+ 'status_label':('Verfahrensstand','Residence status','Statut de séjour'),
+ 'age_label':('Alter','Age','Âge'),
+ 'zemis_job':('ZEMIS: {company} ab {date}','ZEMIS: {company} from {date}','ZEMIS : {company} dès le {date}'),
+ # Help for every control ("!" buttons)
+ 'help_label':('Hilfe','Help','Aide'),
+ 'help_overview':('Öffnet die Übersicht: Kennzahlen, Ampel der drei Ziele und Gruppenanalyse zum gewählten Stichtag.',
+                  'Opens the overview: key figures, traffic lights for the three goals and the group analysis for the chosen report date.',
+                  'Ouvre la vue d’ensemble : chiffres clés, feux des trois objectifs et analyse de groupes à la date choisie.'),
+ 'help_queue':('Öffnet die Fallliste: wen Sie diese Woche kontaktieren sollten und warum, mit Ampel pro Ziel.',
+               'Opens the case list: who to contact this week and why, with a traffic light per goal.',
+               'Ouvre la liste des dossiers : qui contacter cette semaine et pourquoi, avec un feu par objectif.'),
+ 'help_reports':('Monatsexporte (11 Excel-Dateien) einlesen, Stichtag wählen und Ergebnisse als Excel herunterladen.',
+                 'Import the monthly exports (11 Excel files), choose the report date and download the results as Excel.',
+                 'Importer les exports mensuels (11 fichiers Excel), choisir la date et télécharger les résultats en Excel.'),
+ 'help_ai':('Erklärt die Regeln mit Quelle und beantwortet feste Fragen zu Gruppen. Läuft lokal, ohne Sprachmodell.',
+            'Explains the rules with their source and answers fixed questions about groups. Runs locally, without a language model.',
+            'Explique les règles avec leur source et répond à des questions fixes sur les groupes. Fonctionne localement, sans modèle de langage.'),
+ 'help_forecast':('Prognose der Fallzahlen, Szenario 2027 und geschätzte Abgeltung.','Workload forecast, the 2027 scenario and an estimate of payments.',
+                  'Prévision de la charge, scénario 2027 et estimation des paiements.'),
+ 'help_intake':('Situationsanalyse als PDF lokal auslesen. Ein Vorschlag wird erst nach Ihrer Bestätigung gespeichert.',
+                'Read a Situationsanalyse PDF locally. A suggestion is saved only after you confirm it.',
+                'Lire une Situationsanalyse PDF localement. Une proposition n’est enregistrée qu’après votre confirmation.'),
+ 'help_language':('Wechselt die Sprache der Oberfläche. Die Daten und die Originalbegriffe aus den Exporten bleiben gleich.',
+                  'Switches the interface language. The data and the original terms from the exports stay the same.',
+                  'Change la langue de l’interface. Les données et les termes originaux des exports restent identiques.'),
+ 'help_logout':('Meldet Sie ab und beendet die Sitzung.','Signs you out and ends the session.','Vous déconnecte et termine la session.'),
+ 'help_snapshot':('Der Stichtag ist das Datum des Monatsexports. Alle Fristen und Ampeln werden auf dieses Datum berechnet.',
+                  'The report date is the date of the monthly export. All deadlines and lights are calculated for this date.',
+                  'La date de référence est celle de l’export mensuel. Tous les délais et feux sont calculés à cette date.'),
+ 'help_factor':('Wählt Ziel und Merkmal für die Gruppenanalyse. Gruppen unter 8 Personen werden zum Schutz ausgeblendet.',
+                'Chooses the goal and the characteristic for the group analysis. Groups under 8 people are hidden for privacy.',
+                'Choisit l’objectif et la caractéristique de l’analyse. Les groupes de moins de 8 personnes sont masqués.'),
+ 'help_aggregates':('Lädt die angezeigte Gruppenanalyse als Excel herunter: nur Summen, keine Personen.',
+                    'Downloads the group analysis shown as Excel: totals only, no individuals.',
+                    'Télécharge l’analyse affichée en Excel : uniquement des totaux, aucune personne.'),
+ 'help_search':('Sucht nach Fallkennung. Der Filter zeigt nur Fälle mit dieser A1-Ampel oder nur die Liste «Diese Woche».',
+                'Searches by case ID. The filter shows only cases with that A1 light, or only the “This week” list.',
+                'Recherche par identifiant. Le filtre n’affiche que les dossiers avec ce feu A1, ou la liste « Cette semaine ».'),
+ 'help_reset':('Entfernt Suche und Filter.','Clears search and filter.','Efface la recherche et le filtre.'),
+ 'help_case_link':('Ein Klick auf eine Fallkennung öffnet die Details: Erklärung pro Ziel und die Exportzeilen, auf denen das Ergebnis beruht.',
+                   'Clicking a case ID opens its details: an explanation per goal and the export rows behind each result.',
+                   'Un clic sur un identifiant ouvre le détail : explication par objectif et lignes d’export à l’origine du résultat.'),
+ 'help_week':('Berechnet aus Fristen und fehlenden Nachweisen, nie aus persönlichen Merkmalen wie Herkunft oder Alter.',
+              'Calculated from deadlines and missing evidence, never from personal traits such as origin or age.',
+              'Calculé à partir des délais et des justificatifs manquants, jamais de traits personnels comme l’origine ou l’âge.'),
+ 'help_back':('Zurück zur Fallliste.','Back to the case list.','Retour à la liste des dossiers.'),
+ 'help_choose_snapshot':('Zeigt einen früher importierten Monat an. Die Daten werden dabei nicht verändert.',
+                         'Shows a month imported earlier. The data is not changed.',
+                         'Affiche un mois importé auparavant. Les données ne sont pas modifiées.'),
+ 'help_seed':('Lädt einen erfundenen Demo-Monat neu. So sehen Sie, was sich von September zu Oktober ändert.',
+              'Reloads an invented demo month, so you can see what changes from September to October.',
+              'Recharge un mois de démonstration fictif pour voir ce qui change de septembre à octobre.'),
+ 'help_invalid':('Testet einen absichtlich unvollständigen Import. Er wird abgelehnt und der bisherige Stand bleibt erhalten.',
+                 'Tests a deliberately incomplete import. It is rejected and the previous results stay in place.',
+                 'Teste une importation volontairement incomplète. Elle est refusée et les résultats précédents restent en place.'),
+ 'help_upload':('Wählen Sie die 11 Excel-Exporte des Monats und den Stichtag. Das Tool prüft Spalten, Daten und Verknüpfungen und übernimmt nur einen fehlerfreien Import.',
+                'Choose the 11 Excel exports of the month and the report date. The tool checks columns, dates and links and only accepts an import without errors.',
+                'Choisissez les 11 exports Excel du mois et la date. L’outil vérifie colonnes, dates et liens et n’accepte qu’une importation sans erreur.'),
+ 'help_export':('Excel mit Ergebnis pro Person und Ziel, Summen pro Sozialarbeiter:in und Einreisejahr sowie Kontrollsummen.',
+                'Excel with the result per person and goal, totals per social worker and entry year, and control totals.',
+                'Excel avec le résultat par personne et objectif, totaux par assistant·e social·e et année d’arrivée, et totaux de contrôle.'),
+ 'help_quality':('Excel mit Importprotokoll: erkannte Dateien, Zeilenzahl, Prüfsumme und Fehler pro Zeile.',
+                 'Excel with the import log: files recognised, row counts, checksums and errors per row.',
+                 'Excel avec le journal d’importation : fichiers reconnus, nombre de lignes, sommes de contrôle et erreurs par ligne.'),
+ 'help_fingerprint':('Zeigt die Prüfsumme jeder Datei. Dieselbe Datei ergibt dieselbe Prüfsumme, so wird ein doppelter Import erkannt.',
+                     'Shows each file’s checksum. The same file gives the same checksum, so a repeated import is detected.',
+                     'Affiche la somme de contrôle de chaque fichier. Un même fichier donne la même somme, ce qui détecte les doublons.'),
+ 'help_topics':('Wählt die Regel, die erklärt werden soll. Die Antwort zitiert die Quelle mit Seite.',
+                'Chooses the rule to explain. The answer cites the source with its page.',
+                'Choisit la règle à expliquer. La réponse cite la source avec sa page.'),
+ 'help_rule_date':('Zeigt die Regel, wie sie an diesem Datum gilt, zum Beispiel vor und nach der Änderung 2027.',
+                   'Shows the rule as it applies on that date, for example before and after the 2027 change.',
+                   'Affiche la règle applicable à cette date, par exemple avant et après le changement de 2027.'),
+ 'help_intents':('Feste Fragen zu Gruppen. Die Antworten kommen aus geschützten Summen, nie aus Einzelfällen.',
+                 'Fixed questions about groups. Answers come from protected totals, never from individual cases.',
+                 'Questions fixes sur les groupes. Les réponses proviennent de totaux protégés, jamais de cas individuels.'),
+ 'help_data_card':('Zeigt die Monatsreihe und ihre Herkunft, auf der die Prognose beruht.','Shows the monthly series behind the forecast and where it comes from.',
+                   'Affiche la série mensuelle de la prévision et son origine.'),
+ 'help_pricing':('Tragen Sie einen angenommenen Betrag pro Ziel ein, um die Abgeltung zu schätzen. Nur zur Illustration, keine offiziellen Tarife.',
+                 'Enter an assumed amount per goal to estimate payments. Illustration only, not official rates.',
+                 'Saisissez un montant supposé par objectif pour estimer les paiements. Illustration seulement, pas de tarifs officiels.'),
+ 'help_csv':('Ersetzt die erfundene Prognosereihe durch eigene Monatszahlen (CSV mit month,count). Nur Summen, keine Personen.',
+             'Replaces the invented forecast series with your own monthly counts (CSV with month,count). Totals only, no individuals.',
+             'Remplace la série fictive par vos propres chiffres mensuels (CSV month,count). Uniquement des totaux.'),
+ 'help_csv_reset':('Stellt die erfundene Prognosereihe wieder her.','Restores the invented forecast series.','Rétablit la série de prévision fictive.'),
+ 'help_pdf':('Liest eine ausgefüllte Situationsanalyse lokal aus und schlägt eine Kategorie vor. Nichts verlässt diesen Computer.',
+             'Reads a completed Situationsanalyse locally and suggests a category. Nothing leaves this computer.',
+             'Lit une Situationsanalyse remplie localement et propose une catégorie. Rien ne quitte cet ordinateur.'),
+ 'help_pdf_sample':('Testet das Auslesen mit einem erfundenen Beispiel-PDF.','Tests the extraction with an invented sample PDF.',
+                    'Teste la lecture avec un PDF d’exemple fictif.'),
+ 'help_manual':('Für gescannte oder unlesbare PDFs: ZEMIS-Nummer und Kategorie von Hand erfassen.',
+                'For scanned or unreadable PDFs: enter the ZEMIS number and category by hand.',
+                'Pour les PDF scannés ou illisibles : saisir manuellement le numéro ZEMIS et la catégorie.'),
+ 'help_review_save':('Speichert die von Ihnen bestätigte Kategorie für diese Person.','Saves the category you confirmed for this person.',
+                     'Enregistre la catégorie que vous avez confirmée pour cette personne.'),
+ 'help_persona':('Wechselt die Demo-Rolle: Sozialarbeiter:in sieht nur eigene Fälle, Leitung nur Summen, Import nur Daten.',
+                 'Switches the demo role: a social worker sees only their own cases, management only totals, import only data.',
+                 'Change le rôle de démo : assistant·e social·e voit ses dossiers, la direction les totaux, l’import les données.'),
+ 'help_login':('Melden Sie sich mit dem erhaltenen Konto an. Ohne Anmeldung sind keine Daten sichtbar.',
+               'Sign in with the account you were given. No data is visible without signing in.',
+               'Connectez-vous avec le compte reçu. Aucune donnée n’est visible sans connexion.'),
+})
+
+COPY.update({
+ 'targets_title':('Stufe 1 · Ziel 1: Ist und Soll','Level 1 · Goal 1: target vs actual','Niveau 1 · Objectif 1 : prévu et réalisé'),
+ 'targets_lead':('Wer ist betroffen, wessen Frist ist abgelaufen, wer hat A1 rechtzeitig erreicht.',
+                 'Who is in scope, whose deadline has passed, and who reached A1 in time.',
+                 'Qui est concerné, quel délai est échu, et qui a atteint A1 à temps.'),
+ 'by_worker':('pro Sozialarbeiter:in','per social worker','par assistant·e social·e'),
+ 'by_year':('pro Einreisejahr','per entry year','par année d’arrivée'),
+ 'col_scope':('Betroffen','In scope','Concernés'),
+ 'col_due':('Soll: Frist abgelaufen','Should have by now','Délai échu'),
+ 'col_ontime':('Ist: fristgerecht','Reached in time','Atteint à temps'),
+ 'col_late':('Verspätet','Late','En retard'),
+ 'col_missed':('Frist verpasst','Missed','Manqué'),
+ 'col_open':('Frist noch offen','Not yet due','Pas encore échu'),
+ 'col_review':('Prüfen','Review','À vérifier'),
+ 'col_rate':('Soll erfüllt','Target met','Objectif atteint'),
+ 'col_mix':('Ampel','Lights','Feux'),
+ 'total':('Total','Total','Total'),
+ 'field':('Angabe','Item','Élément'),
+ 'value':('Wert','Value','Valeur'),
+ 'targets_note':('«Soll erfüllt» = fristgerecht erreicht ÷ Personen, deren Frist am Stichtag abgelaufen ist. Die Summen stimmen mit dem Excel-Export überein.',
+                 '“Target met” = reached in time ÷ people whose deadline has passed on the report date. The totals match the Excel export.',
+                 '« Objectif atteint » = atteint à temps ÷ personnes dont le délai est échu à la date de référence. Les totaux correspondent à l’export Excel.'),
+ 'help_targets':('Zeigt pro Sozialarbeiter:in und pro Einreisejahr, wie viele Personen A1 bis zur Frist erreicht haben. Gleiche Zahlen wie im Excel-Export.',
+                 'Shows per social worker and per entry year how many people reached A1 by their deadline. Same figures as the Excel export.',
+                 'Montre par assistant·e social·e et par année d’arrivée combien de personnes ont atteint A1 à temps. Mêmes chiffres que l’export Excel.'),
+ 'level2_title':('Stufe 2 · Was haben Personen gemeinsam, die das Ziel erreichen?','Level 2 · What do people who reach the goal have in common?',
+                 'Niveau 2 · Qu’ont en commun les personnes qui atteignent l’objectif ?'),
+ 'insight':('Höchste Quote: {high} mit {high_rate} (n = {high_n}). Tiefste: {low} mit {low_rate} (n = {low_n}). Unterschied {diff} Prozentpunkte.',
+            'Highest rate: {high} at {high_rate} (n = {high_n}). Lowest: {low} at {low_rate} (n = {low_n}). Difference {diff} percentage points.',
+            'Taux le plus élevé : {high} avec {high_rate} (n = {high_n}). Le plus bas : {low} avec {low_rate} (n = {low_n}). Écart {diff} points.'),
+ 'insight_clear':('Die Unsicherheitsbereiche überschneiden sich nicht: ein deutlicher Zusammenhang, aber keine bewiesene Ursache.',
+                  'The uncertainty ranges do not overlap: a clear association, but not a proven cause.',
+                  'Les intervalles ne se chevauchent pas : une association nette, mais pas une cause prouvée.'),
+ 'insight_overlap':('Die Unsicherheitsbereiche überschneiden sich: der Unterschied kann zufällig sein.',
+                    'The uncertainty ranges overlap: the difference may be due to chance.',
+                    'Les intervalles se chevauchent : l’écart peut être dû au hasard.'),
+ 'rate_chart':('Quote fristgerecht (Balken) mit 95 %-Bereich (Rahmen)','On-time rate (bar) with 95 % range (outline)','Taux à temps (barre) avec intervalle à 95 % (contour)'),
+ 'synthetic_patterns':('Demo-Daten: Die Zusammenhänge wurden absichtlich erzeugt, damit die Analyse etwas zeigt. Liste in docs/SOURCES.md.',
+                       'Demo data: the associations were planted on purpose so the analysis has something to show. Listed in docs/SOURCES.md.',
+                       'Données de démo : les associations ont été créées exprès pour que l’analyse montre quelque chose. Liste dans docs/SOURCES.md.'),
+})
+
+COPY.update({
+ 'forecast':('Planung','Planning','Planification'),
+ 'help':('Hilfe','Help','Aide'),
+ 'privacy':('Datenschutz','Data protection','Protection des données'),
+ 'help_help':('Rundgang Schritt für Schritt und Begriffe wie A1, Ampel oder Soll/Ist einfach erklärt.',
+              'A step-by-step tour and plain explanations of terms such as A1, lights or target vs actual.',
+              'Visite pas à pas et explication simple des termes comme A1, feux ou objectif/réalisé.'),
+ 'help_privacy':('Wo die Daten liegen, wer was sieht und was das Netz verlässt.','Where the data stays, who sees what and what leaves the network.',
+                 'Où restent les données, qui voit quoi et ce qui quitte le réseau.'),
+ 'help_forecast':('Abgeltung, Szenario 2027, ZEMIS-Abgleich und Prognose der Neuzugänge auf einer Seite.',
+                  'Payments, the 2027 scenario, the ZEMIS check and the arrivals forecast on one page.',
+                  'Paiements, scénario 2027, contrôle ZEMIS et prévision des arrivées sur une page.'),
+ 'plan_lead':('Was bringt das Erreichte ein, was ändert 2027, wo fehlen Meldungen und wie viele Personen kommen neu?',
+              'What do achieved goals earn, what changes in 2027, where are reports missing and how many people will arrive?',
+              'Que rapportent les objectifs atteints, que change 2027, où manquent des annonces et combien de personnes arrivent ?'),
+ 'help_jump':('Springt direkt zum Abschnitt auf dieser Seite.','Jumps straight to that section of this page.','Va directement à cette section de la page.'),
+ 'pay_title':('Abgeltung','Payments','Paiements'),
+ 'pay_lead':('Gezählt wird nur, was fristgerecht erreicht und mit gleichem Datum in Integrationszielerreichung erfasst ist. Ziel 3 zählt einmal pro Haushalt.',
+             'Only goals reached on time and recorded with the same date in Integrationszielerreichung count. Goal 3 counts once per household.',
+             'Seuls les objectifs atteints à temps et saisis à la même date dans Integrationszielerreichung comptent. L’objectif 3 compte une fois par ménage.'),
+ 'pay_total':('Total abrechenbar','Total payable','Total facturable'),
+ 'pay_open':('{n} erreichte Ziele sind noch nicht abrechenbar, weil der offizielle Eintrag fehlt oder abweicht. Nachgetragen wären das bis zu {amount}.',
+             '{n} reached goals cannot be claimed yet because the official record is missing or differs. Recorded, that is up to {amount}.',
+             '{n} objectifs atteints ne sont pas encore facturables, car la saisie officielle manque ou diffère. Une fois saisis : jusqu’à {amount}.'),
+ 'pay_open_link':('Fälle mit fehlendem Eintrag öffnen','Open cases with a missing record','Ouvrir les dossiers sans saisie'),
+ 'scen_lead':('Ab 1. Januar 2027 endet die Zuständigkeit für VA und F-FL fünf statt sieben Jahre nach der Einreise. Annahme der Demo: gilt für alle laufenden Fälle.',
+              'From 1 January 2027, responsibility for VA and F-FL ends five instead of seven years after entry. Demo assumption: it applies to all open cases.',
+              'Dès le 1er janvier 2027, la prise en charge des AP et réfugiés AP prend fin cinq ans au lieu de sept après l’arrivée. Hypothèse de la démo : tous les dossiers en cours.'),
+ 'scen_changed':('Personen mit früherem Zuständigkeitsende','People whose responsibility ends earlier','Personnes dont la prise en charge finit plus tôt'),
+ 'scen_overdue':('Ziele sofort überfällig','Goals overdue at once','Objectifs aussitôt en retard'),
+ 'scen_risk':('Ziele neu gefährdet','Goals newly at risk','Objectifs nouvellement en danger'),
+ 'scen_household':('{n} Personen ohne Einreisedatum übernehmen die neue Frist ihres Haushalts, weil alle Mitglieder dasselbe exportierte Ende haben.',
+                   '{n} people without an entry date take their household’s new cutoff, because all members share the same exported end.',
+                   '{n} personnes sans date d’arrivée reprennent la nouvelle échéance de leur ménage, car tous les membres ont la même fin exportée.'),
+ 'scen_confirm':('Welche Kohorten betroffen sind, muss das ASD bestätigen. Die Regel steht in cockpit/responsibility-policy.json und lässt sich ohne Programmänderung anpassen.',
+                 'ASD must confirm which cohorts are affected. The rule lives in cockpit/responsibility-policy.json and can be changed without touching the code.',
+                 'L’ASD doit confirmer les cohortes concernées. La règle se trouve dans cockpit/responsibility-policy.json et se modifie sans toucher au code.'),
+ 'help_scenario':('Vergleicht jedes Ziel mit heutiger Frist (Basis) und mit der Frist ab 2027 (Szenario). Die importierten Daten bleiben unverändert.',
+                  'Compares each goal under today’s cutoff (baseline) and the 2027 cutoff (scenario). The imported data stay unchanged.',
+                  'Compare chaque objectif avec l’échéance actuelle (référence) et celle de 2027 (scénario). Les données importées ne changent pas.'),
+ 'zemis_title':('ZEMIS-Abgleich','ZEMIS check','Contrôle ZEMIS'),
+ 'zemis_lead':('Stellen, die in ZEMIS gemeldet sind, werden mit den Einträgen in Erwerb verglichen. Abweichungen können Ziel 2 und die Abgeltung verfälschen.',
+               'Jobs reported in ZEMIS are compared with the entries in Erwerb. Mismatches can distort goal 2 and payments.',
+               'Les emplois annoncés dans ZEMIS sont comparés aux saisies d’Erwerb. Les écarts peuvent fausser l’objectif 2 et les paiements.'),
+ 'zemis_people':('Personen mit Abweichung','People with a mismatch','Personnes avec un écart'),
+ 'zemis_none':('Keine Abweichungen zum Stichtag.','No mismatches on the report date.','Aucun écart à la date de référence.'),
+ 'zemis_link':('Diese Fälle in der Fallführung öffnen','Open these cases in casework','Ouvrir ces dossiers dans le suivi'),
+ 'record':('Eintrag für Abgeltung fehlt','Payment record missing','Saisie pour paiement manquante'),
+ 'zemis':('ZEMIS-Abweichung','ZEMIS mismatch','Écart ZEMIS'),
+ 'forecast_model':('Prognosemodell','Forecast model','Modèle de prévision'),
+ 'calculate':('Neu berechnen','Recalculate','Recalculer'),
+ 'scenario_details':('Alle Ziele im Vergleich','All goals compared','Tous les objectifs comparés'),
+ 'pay_open_count':('{n} erreichte Ziele sind noch nicht abrechenbar, weil der offizielle Eintrag fehlt oder abweicht. Tragen Sie Ansätze ein, um den Betrag zu sehen.',
+                   '{n} reached goals cannot be claimed yet because the official record is missing or differs. Enter rates to see the amount.',
+                   '{n} objectifs atteints ne sont pas encore facturables, car la saisie officielle manque ou diffère. Saisissez des tarifs pour voir le montant.'),
+ 'help_zemis':('Zählt nur Meldungen bis zum Stichtag. Gleicher Arbeitgeber und überlappende Daten gelten als bestätigt.',
+               'Counts reports up to the report date. Same employer and overlapping dates count as confirmed.',
+               'Ne compte que les annonces jusqu’à la date de référence. Même employeur et dates qui se chevauchent valent confirmation.'),
+ 'arrivals_title':('Neuzugänge','New arrivals','Nouvelles arrivées'),
+ 'arrivals_lead':('Wie viele Personen kommen voraussichtlich im nächsten Monat neu dazu? Geschätzt aus der Monatsreihe, geprüft an zurückgehaltenen Monaten.',
+                  'How many people are likely to arrive next month? Estimated from the monthly series and checked on held-back months.',
+                  'Combien de personnes arriveront probablement le mois prochain ? Estimation tirée de la série mensuelle, vérifiée sur des mois mis de côté.'),
+ 'guide_lead':('So arbeiten Sie mit dem Cockpit. Die Schritte zeigen nur Bereiche, die Ihre Rolle öffnen darf.',
+               'How to work with the cockpit. The steps only show areas your role may open.',
+               'Comment utiliser le cockpit. Les étapes ne montrent que les espaces ouverts à votre rôle.'),
+ 'guide_steps':('Rundgang','Tour','Visite'),
+ 'guide_open':('Öffnen','Open','Ouvrir'),
+ 'step_reports':('Stichtag laden: die elf Excel-Exporte hochladen oder einen Demo-Monat wählen. Fehlerhafte Dateien werden abgelehnt, die letzte gültige Version bleibt.',
+                 'Load a report date: upload the eleven Excel exports or pick a demo month. Faulty files are rejected and the last valid version stays.',
+                 'Charger une date de référence : déposer les onze exports Excel ou choisir un mois de démo. Les fichiers erronés sont refusés, la dernière version valable reste.'),
+ 'step_overview':('Übersicht lesen: drei Ziele mit Ampel, Ist und Soll pro Fallführung und Einreisejahr, dann die Gruppenanalyse (Stufe 2).',
+                  'Read the overview: three goals with lights, target vs actual per caseworker and entry year, then the group analysis (level 2).',
+                  'Lire la vue d’ensemble : trois objectifs avec feux, objectif et réalisé par gestionnaire et année d’arrivée, puis l’analyse de groupes (niveau 2).'),
+ 'step_queue':('«Diese Woche» abarbeiten: oben stehen Fristen, die noch zu retten sind, dann fehlende Einträge für die Abgeltung.',
+               'Work through “This week”: deadlines that can still be saved come first, then missing records for payments.',
+               'Traiter « Cette semaine » : d’abord les délais encore rattrapables, puis les saisies manquantes pour les paiements.'),
+ 'step_case':('Fall öffnen: der nächste Schritt steht oben, darunter jede Regel mit den Quellzeilen, aus denen sie berechnet wurde.',
+              'Open a case: the next step is at the top, below it each rule with the source rows it was calculated from.',
+              'Ouvrir un dossier : l’étape suivante est en haut, puis chaque règle avec les lignes sources utilisées.'),
+ 'step_forecast':('Planung prüfen: Abgeltung, Wirkung der Regel 2027, ZEMIS-Abweichungen und erwartete Neuzugänge.',
+                  'Check planning: payments, the effect of the 2027 rule, ZEMIS mismatches and expected arrivals.',
+                  'Vérifier la planification : paiements, effet de la règle 2027, écarts ZEMIS et arrivées attendues.'),
+ 'step_intake':('Situationsanalyse auswerten: PDF lokal lesen, Kategorie bestätigen. Erst dann fliesst sie in die Analyse ein.',
+                'Review an intake form: read the PDF locally and confirm the category. Only then does it enter the analysis.',
+                'Analyser une situation : lire le PDF localement, confirmer la catégorie. Elle n’entre dans l’analyse qu’ensuite.'),
+ 'step_ai':('Regeln nachschlagen: Quelle und gültige Fassung jeder Regel, ohne Personendaten.',
+            'Look up rules: the source and valid version of each rule, without personal data.',
+            'Consulter les règles : source et version valable de chaque règle, sans données personnelles.'),
+ 'glossary':('Begriffe','Terms','Termes'),
+ 'g_a1':('Ziel 1 · Sprache A1','Goal 1 · Language A1','Objectif 1 · Langue A1'),
+ 'g_a1_text':('Personen ab 16 mit VA oder F-FL brauchen innert drei Jahren nach Einreise einen A1-Nachweis (z. B. fide, telc).',
+              'People aged 16+ with VA or F-FL need A1 proof (e.g. fide, telc) within three years of entry.',
+              'Les personnes de 16 ans et plus avec AP ou réfugié AP doivent prouver le niveau A1 (p. ex. fide, telc) dans les trois ans après l’arrivée.'),
+ 'g_work':('Ziel 2 · Arbeit oder Ausbildung','Goal 2 · Work or education','Objectif 2 · Travail ou formation'),
+ 'g_work_text':('Sechs Monate ohne Unterbruch mindestens 60 % im ersten Arbeitsmarkt oder eine Ausbildung Sek II / Tertiär vor Zuständigkeitsende.',
+                'Six uninterrupted months at 60 %+ in the primary labour market, or upper-secondary/tertiary education before responsibility ends.',
+                'Six mois sans interruption à 60 % ou plus sur le premier marché du travail, ou une formation secondaire II / tertiaire avant la fin de la prise en charge.'),
+ 'g_household':('Ziel 3 · Finanzielle Selbstständigkeit','Goal 3 · Financial independence','Objectif 3 · Autonomie financière'),
+ 'g_household_text':('Der ganze Haushalt (Dossier-Nr.) lebt zwölf Monate am Stück ohne Sozialhilfe vor Zuständigkeitsende.',
+                     'The whole household (Dossier-Nr.) lives twelve months in a row without social assistance before responsibility ends.',
+                     'Tout le ménage (Dossier-Nr.) vit douze mois d’affilée sans aide sociale avant la fin de la prise en charge.'),
+ 'g_lights':('Ampel','Lights','Feux'),
+ 'g_lights_text':('Grün erreicht · Gelb auf Kurs · Orange gefährdet · Rot überfällig oder verspätet · Violett prüfen · Grau nicht betroffen.',
+                  'Green reached · yellow on track · orange at risk · red overdue or late · purple check · grey not in scope.',
+                  'Vert atteint · jaune en bonne voie · orange en danger · rouge en retard · violet à vérifier · gris non concerné.'),
+ 'g_target':('Soll und Ist','Target and actual','Objectif et réalisé'),
+ 'g_target_text':('Soll: Personen, deren Frist abgelaufen ist. Ist: davon fristgerecht erreicht. Soll erfüllt ist Ist geteilt durch Soll.',
+                  'Target: people whose deadline has passed. Actual: of those, reached on time. Target met is actual divided by target.',
+                  'Objectif : personnes dont le délai est échu. Réalisé : parmi elles, atteint à temps. Le taux est réalisé divisé par objectif.'),
+ 'g_cutoff':('Stichtag und Zuständigkeitsende','Report date and end of responsibility','Date de référence et fin de prise en charge'),
+ 'g_cutoff_text':('Der Stichtag ist das Datum des Exports. Nach dem Zuständigkeitsende zählt ein Ziel nicht mehr für das ASD.',
+                  'The report date is the export date. After responsibility ends, a goal no longer counts for ASD.',
+                  'La date de référence est celle de l’export. Après la fin de prise en charge, un objectif ne compte plus pour l’ASD.'),
+ 'g_small':('Kleine Gruppen','Small groups','Petits groupes'),
+ 'g_small_text':('Gruppen mit weniger als 8 Personen werden ausgeblendet, damit niemand erkennbar wird.',
+                 'Groups with fewer than 8 people are hidden so nobody can be recognised.',
+                 'Les groupes de moins de 8 personnes sont masqués pour que personne ne soit reconnaissable.'),
+ 'g_zemis':('ZEMIS','ZEMIS','ZEMIS'),
+ 'g_zemis_text':('Bundesregister, in dem Arbeitgeber Stellen von Geflüchteten melden. Dient hier zur Kontrolle der Erwerbseinträge.',
+                 'Federal register where employers report jobs held by refugees. Used here to check the employment entries.',
+                 'Registre fédéral où les employeurs annoncent les emplois des personnes réfugiées. Sert ici à contrôler les saisies d’emploi.'),
+ 'pv_lead':('Das Cockpit ist so gebaut, dass Personendaten auf dem Rechner des ASD bleiben. Vor dem Echtbetrieb prüft die Datenschutzstelle der Stadt Bern.',
+            'The cockpit is built so personal data stay on ASD’s own machine. Before live use, the City of Bern’s data protection office reviews it.',
+            'Le cockpit est conçu pour que les données personnelles restent sur l’ordinateur de l’ASD. Avant la mise en service, le service de protection des données de la Ville de Berne l’examine.'),
+ 'pv_stay':('Daten bleiben lokal','Data stay local','Les données restent locales'),
+ 'pv_stay_text':('Eine Datei auf dem ASD-Rechner. Keine Cloud, kein externer Server.','One file on the ASD machine. No cloud, no external server.',
+                 'Un fichier sur l’ordinateur de l’ASD. Pas de cloud, pas de serveur externe.'),
+ 'pv_roles':('Nur was die Rolle braucht','Only what the role needs','Seulement ce dont le rôle a besoin'),
+ 'pv_roles_text':('Fallführung sieht eigene Fälle, Leitung nur Summen. Der Server prüft das bei jedem Aufruf.',
+                  'Caseworkers see their own cases, management only totals. The server checks this on every request.',
+                  'Les gestionnaires voient leurs dossiers, la direction seulement des totaux. Le serveur le vérifie à chaque requête.'),
+ 'pv_leave':('Nichts geht automatisch hinaus','Nothing leaves automatically','Rien ne sort automatiquement'),
+ 'pv_leave_text':('Keine KI-Dienste, keine Statistik-Tools. Der Browser darf nur Dateien des Cockpits laden.',
+                  'No AI services, no tracking tools. The browser may only load the cockpit’s own files.',
+                  'Aucun service d’IA, aucun outil de suivi. Le navigateur ne charge que les fichiers du cockpit.'),
+ 'pv_flow':('Weg der Daten','How data flow','Parcours des données'),
+ 'pv_flow_1':('Excel-Exporte aus dem Fallsystem','Excel exports from the case system','Exports Excel du système de dossiers'),
+ 'pv_flow_2':('Prüfung beim Import: unvollständige Lieferungen werden abgelehnt','Checked on import: incomplete deliveries are rejected','Contrôle à l’import : les livraisons incomplètes sont refusées'),
+ 'pv_flow_3':('Speicherung in einer Datei auf dem ASD-Rechner','Stored in one file on the ASD machine','Stockage dans un fichier sur l’ordinateur de l’ASD'),
+ 'pv_flow_4':('Anzeige im Browser, gefiltert nach Rolle','Shown in the browser, filtered by role','Affichage dans le navigateur, filtré par rôle'),
+ 'pv_flow_5':('Excel-Download nur auf Klick, im gleichen Rollenumfang','Excel download only on click, within the same role scope','Téléchargement Excel seulement sur clic, dans le même périmètre'),
+ 'pv_who':('Wer sieht was','Who sees what','Qui voit quoi'),
+ 'pv_area':('Bereich','Area','Espace'),
+ 'pv_cases':('Fallliste und Falldetails','Case list and case details','Liste et détail des dossiers'),
+ 'pv_overview':('Übersicht und Analyse','Overview and analysis','Vue d’ensemble et analyse'),
+ 'pv_export':('Excel-Export','Excel export','Export Excel'),
+ 'pv_import':('Import und Qualitätsbericht','Import and quality report','Import et rapport qualité'),
+ 'pv_plan':('Planung','Planning','Planification'),
+ 'pv_intake':('Situationsanalyse','Intake review','Analyse de situation'),
+ 'cell_all':('Alle','All','Tous'),
+ 'cell_own':('Nur eigene Fälle','Own cases only','Ses dossiers seulement'),
+ 'cell_sums':('Nur Summen','Totals only','Totaux seulement'),
+ 'cell_no':('Kein Zugriff','No access','Pas d’accès'),
+ 'pv_stored':('Was gespeichert wird','What is stored','Ce qui est enregistré'),
+ 'pv_stored_1':('Die Zeilen der Exporte, pro Stichtag, damit jede Zahl auf ihre Quelle zurückführbar ist.',
+                'The rows of the exports, per report date, so every number can be traced to its source.',
+                'Les lignes des exports, par date de référence, pour que chaque chiffre soit traçable.'),
+ 'pv_stored_2':('Passwörter nur als scrypt-Hash. Sitzungen enden nach acht Stunden.','Passwords only as scrypt hashes. Sessions end after eight hours.',
+                'Mots de passe uniquement sous forme de hachage scrypt. Les sessions expirent après huit heures.'),
+ 'pv_stored_3':('Das Protokoll hält Zeit, Aktion und Ergebnis fest, aber keine Namen oder Nummern von Klientinnen und Klienten.',
+                'The log records time, action and outcome, but no client names or numbers.',
+                'Le journal note l’heure, l’action et le résultat, sans noms ni numéros de clients.'),
+ 'pv_stored_4':('Ein Situationsanalyse-PDF wird nur im Arbeitsspeicher gelesen. Gespeichert wird allein die bestätigte Kategorie.',
+                'An intake PDF is only read in memory. Only the confirmed category is stored.',
+                'Un PDF d’analyse de situation n’est lu qu’en mémoire. Seule la catégorie confirmée est enregistrée.'),
+ 'pv_out':('Was das Netz verlässt','What leaves the network','Ce qui quitte le réseau'),
+ 'pv_out_1':('Automatisch nichts. Der Browser blockiert Skripte und Inhalte fremder Adressen.','Nothing automatically. The browser blocks scripts and content from other addresses.',
+             'Rien automatiquement. Le navigateur bloque les scripts et contenus d’autres adresses.'),
+ 'pv_out_2':('Links zu BFS oder SEM öffnen sich nur auf Klick und senden keine Herkunftsadresse mit.','Links to FSO or SEM open only on click and send no referring address.',
+             'Les liens vers l’OFS ou le SEM ne s’ouvrent que sur clic et n’envoient pas l’adresse d’origine.'),
+ 'pv_out_3':('Der Regelassistent arbeitet mit festen Quellen und lehnt Fragen mit Personendaten ab.','The rules assistant uses fixed sources and refuses questions that contain personal data.',
+             'L’assistant des règles utilise des sources fixes et refuse les questions avec des données personnelles.'),
+ 'pv_delete':('Löschen','Deleting','Suppression'),
+ 'pv_delete_text':('Einen Stichtag löscht der Betrieb per Befehl. Wird die Datenbankdatei gelöscht, sind alle Daten weg.',
+                   'Operations deletes a report date with one command. Deleting the database file removes all data.',
+                   'L’exploitation supprime une date de référence par commande. Supprimer le fichier de base efface toutes les données.'),
+ 'pv_demo':('Öffentliche Demo: nur erfundene Personen. Das Hochladen echter Dateien ist dort gesperrt.',
+            'Public demo: invented people only. Uploading real files is blocked there.',
+            'Démo publique : personnes inventées uniquement. Le dépôt de vrais fichiers y est bloqué.'),
+})
+
+DATASET_NAMES = {'language':'Sprachstand','official':'Integrationszielerreichung','work':'Erwerb',
+                 'education':'Integrationsförderung und Ausbildung','membership':'Dossierperson',
+                 'support':'Finanzielle Unterstützung','zemis':'ZEMIS Tätigkeit','housing':'Unterbringung',
+                 'status':'Asylverfahrensstand'}
+
+
 def esc(v):
     return escape(str(v if v is not None else '—'),quote=True)
+
+
+def swiss(value):
+    """Swiss date format (dd.mm.yyyy) for dates and ISO strings; anything else is passed through."""
+    if isinstance(value,str):
+        try:
+            value = date.fromisoformat(value)
+        except ValueError:
+            return value
+    return value.strftime('%d.%m.%Y') if isinstance(value,date) else value
+
+
+def say(lang,key,**values):
+    return esc(tr(lang,key)).format(**{k:esc(v) for k,v in values.items()})
+
+
+def tip(lang,key):
+    # A click-to-open explanation without JavaScript (the CSP allows no scripts).
+    return (f'<details class="tip"><summary aria-label="{text(lang,"help_label")}" title="{text(lang,"help_label")}">!</summary>'
+            f'<span class="tip-body" role="note">{text(lang,key)}</span></details>')
 
 
 def tr(lang,key):
@@ -297,51 +728,144 @@ def action(lang,key):
 
 
 def badge(lang,state):
-    return f'<span class="badge {esc(state)}"><i></i>{text(lang,state)}</span>'
+    return f'<span class="badge {esc(state)}"><i aria-hidden="true"></i>{text(lang,state)}</span>'
 
 
-NAV_SYMBOLS = {'overview':'▦','queue':'☷','reports':'▤','ai':'◇','forecast':'⌁','intake':'▧'}
+# Stroke icons drawn on a 24-unit grid; rendered inline so the strict CSP needs no extra sources.
+ICONS = {
+    'overview':'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+    'queue':'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+    'reports':'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8M12 11v8"/>',
+    'ai':'<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
+    'forecast':'<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 6-7"/><path d="M15 7h5v5"/>',
+    'intake':'<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3v2h6V3M9 10h6M9 14h6M9 18h3"/>',
+    'help':'<circle cx="12" cy="12" r="9"/><path d="M9.5 9.2a2.6 2.6 0 0 1 5 .9c0 1.7-2.5 2.3-2.5 3.9M12 17h.01"/>',
+    'privacy':'<path d="M12 3l7 3v5c0 4.6-3 8.3-7 10-4-1.7-7-5.4-7-10V6z"/><rect x="9" y="11" width="6" height="5" rx="1"/><path d="M10 11V9.5a2 2 0 0 1 4 0V11"/>',
+    'people':'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+    'homes':'<path d="M3 10.5L12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+    'met':'<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16.5 9.5"/>',
+    'follow':'<path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+    'calendar':'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+}
+
+
+def icon(name,cls='icon'):
+    return (f'<svg class="{cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" '
+            f'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">{ICONS[name]}</svg>')
+
+
+STATE_ORDER = ('achieved','late','ontrack','risk','overdue','review','na')
+
+
+def state_bar(totals):
+    # Proportional SVG bar; the count list beside it carries the same data as text.
+    total = sum(totals.values())
+    if not total:
+        return ''
+    x, parts = 0.0, []
+    for state in STATE_ORDER:
+        width = 100*totals.get(state,0)/total
+        if width:
+            parts.append(f'<rect class="seg-{state}" x="{x:.3f}" y="0" width="{width:.3f}" height="10"/>')
+            x += width
+    return f'<svg class="state-bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false">{"".join(parts)}</svg>'
 
 
 def institutional_marks(lang):
     return (
         f'<section class="institutions" aria-label="{text(lang,"brand_context")}">'
         f'<p>{text(lang,"brand_context")}</p><div class="institutions-row">'
-        '<a class="city-mark" href="https://www.bern.ch/asylsozialdienst"><img src="/static/stadt-bern.png" alt="Stadt Bern"></a>'
-        f'<a class="sem-mark" href="https://www.sem.admin.ch/"><img src="/static/sem-shield.svg" alt=""><span><strong>SEM</strong><small>{text(lang,"sem_name")}</small></span></a>'
-        f'</div><p>{text(lang,"brand_independence")}</p></section>'
+        '<a class="mark city-mark" href="https://www.bern.ch/asylsozialdienst"><img src="/static/stadt-bern-logo.png" alt="Stadt Bern"></a>'
+        '<span class="mark canton-mark"><img src="/static/bern-flag.png" alt=""><span><strong>Kanton Bern</strong><small>Canton de Berne</small></span></span>'
+        f'<a class="mark sem-mark" href="https://www.sem.admin.ch/"><img src="/static/sem-shield.svg" alt=""><span><strong>SEM</strong><small>{text(lang,"sem_name")}</small></span></a>'
+        '<span class="mark swiss-mark"><span class="swiss-flag" aria-hidden="true"></span><span><strong>Schweiz</strong><small>Suisse · Svizzera · Svizra</small></span></span>'
+        f'</div><p class="independence">{text(lang,"brand_independence")}</p></section>'
     )
 
 
-def layout(lang,active,body,account=None,csrf='',snapshot=None,demo_switch=False,view_path=''):
+def menus_for(role):
     menus = ['overview','queue','reports','ai','forecast','intake']
-    if account:
-        if account['role']=='worker':
-            menus.remove('forecast')
-        if account['role']=='manager':
-            menus = [m for m in menus if m not in ('queue','intake')]
-        if account['role']=='importer':
-            menus = ['reports','intake','ai']
-    nav = ''.join(f'<a href="/{key}" {"aria-current=page" if key==active or key=="queue" and active=="case" else ""}><span class="nav-icon" aria-hidden="true">{NAV_SYMBOLS[key]}</span><span>{text(lang,key)}</span></a>' for key in menus) if account else ''
+    if role=='worker':
+        menus.remove('forecast')
+    if role=='manager':
+        menus = [m for m in menus if m not in ('queue','intake')]
+    if role=='importer':
+        menus = ['reports','intake','ai']
+    return menus+['help','privacy']
+
+
+def layout(lang,active,body,account=None,csrf='',snapshot=None,demo_switch=False,view_path=''):
+    menus = menus_for(account['role']) if account else []
+    nav = ''.join(f'<div class="nav-row"><a href="/{key}" {"aria-current=page" if key==active or key=="queue" and active=="case" else ""}>{icon(key,"nav-icon")}<span>{text(lang,key)}</span></a>{tip(lang,"help_"+key)}</div>' for key in menus) if account else ''
     target = urlsplit(view_path or '/'+active)
     parameters = parse_qs(target.query)
     filters = {k:parameters[k][0] for k in ('q','state','page','goal','factor','topic','intent','asof') if k in parameters}
     language = ''.join(f'<a lang="{locale}" href="{href(f'/language/{locale}', view=target.path, **filters)}" {"aria-current=page" if i==lang else ""}>{locale[:2].upper()}</a>'
                        for i,locale in enumerate(LOCALES))
-    date = f'<span class="snapshot">{text(lang,"snapshot")} <strong>{esc(snapshot["asof"])}</strong></span>' if snapshot else ''
-    logout = post('/logout',csrf,action(lang,'logout')) if account else ''
+    date = f'<span class="snapshot">{icon("calendar")}{text(lang,"snapshot")} <strong>{esc(swiss(snapshot["asof"]))}</strong></span>{tip(lang,"help_snapshot")}' if snapshot else ''
+    logout = post('/logout',csrf,action(lang,'logout')+tip(lang,'help_logout')) if account else ''
     persona = ''
     if demo_switch:
         opts = ''.join(f'<option value="{key}" {"selected" if key==account["role"] else ""}>{text(lang,"role_"+key)}</option>'
                        for key in ('judge','worker','manager','importer'))
-        persona = post('/demo-role',csrf,f'<label>{text(lang,"demo_persona")} <select name="role">{opts}</select></label>'+action(lang,'apply_role'))
+        persona = post('/demo-role',csrf,f'<label>{text(lang,"demo_persona")} <select name="role">{opts}</select></label>'+action(lang,'apply_role')+tip(lang,'help_persona'))
     role_label = f'<span class="role-label">{text(lang,"role_"+account["role"])}</span>' if account else ''
-    frame = f'<aside><a class="brand" href="/"><img class="brand-flag" src="/static/bern-canton.png" alt=""><div>Integrations-Cockpit<small>Bern</small></div></a><nav aria-label="{text(lang,"navigation")}">{nav}</nav><div class="aside-bottom">{role_label}{persona}</div></aside>' if account else ''
+    frame = (f'<aside><a class="brand" href="/"><img class="brand-mark" src="/static/stadt-bern-shield.png" alt="Stadt Bern"><div>Integrations-Cockpit<small>Bern</small></div></a>'
+             f'<nav aria-label="{text(lang,"navigation")}">{nav}</nav><div class="aside-bottom">{role_label}{persona}'
+             '<div class="aside-marks" aria-hidden="true"><img src="/static/bern-flag.png" alt=""><img src="/static/sem-shield.svg" alt=""><span class="swiss-flag"></span></div></div></aside>') if account else ''
     mode = 'dashboard' if account else 'signin'
     return f'''<!doctype html><html lang="{LOCALES[lang]}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{text(lang,active)} · Integrations-Cockpit Bern</title><link rel="stylesheet" href="/static/app.css"></head>
-<body class="{mode}"><a class="skip-link" href="#main">{text(lang,"skip_main")}</a>{frame}<div class="workspace"><header><div class="header-context"><span class="swiss-flag" role="img" aria-label="Schweiz · Suisse · Svizzera"></span>{date or f'<span class="snapshot">{text(lang,"brand_independence")}</span>'}</div><div class="header-actions"><div class="languages">{language}</div>{logout}</div></header>
-<main id="main" tabindex="-1">{body}{institutional_marks(lang)}<footer class="photo-credit">{'<a href="https://commons.wikimedia.org/wiki/File:Bern_Altstadt_von_Rosengarten_20211007.jpg">Bern · Daniel Kraft</a> · <a href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>' if active in ('overview','login') else ''}</footer></main></div></body></html>'''
+<body class="{mode}"><a class="skip-link" href="#main">{text(lang,"skip_main")}</a>{frame}<div class="workspace"><header><div class="header-context"><span class="swiss-flag" role="img" aria-label="Schweiz · Suisse · Svizzera"></span>{date or f'<span class="snapshot">{text(lang,"brand_independence")}</span>'}</div><div class="header-actions"><div class="languages">{language}</div>{tip(lang,"help_language")}{logout}</div></header>
+<main id="main" tabindex="-1">{body}{institutional_marks(lang)}<footer class="photo-credit">{('<a href="https://commons.wikimedia.org/wiki/File:Bern_Altstadt_von_Rosengarten_20211007.jpg">Bern · Daniel Kraft</a> · <a href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>' if active in ('overview','login') else '')+(f' · <a href="/privacy">{text(lang,"privacy")}</a>' if not account else '')}</footer></main></div></body></html>'''
+
+
+def a1_targets(lang,cases,field):
+    """Level 1 totals on screen; same partition as the Excel worker / entry-year sheets."""
+    groups = {}
+    for case in cases:
+        value = case[field]
+        key = value.year if field=='entry' and value else value
+        groups.setdefault(str(key or '—'),[]).append(case)
+
+    def row(label,items):
+        scope = [c for c in items if c['goals'][0]['scope']=='scope_in']
+        due = [c for c in scope if c['goals'][0].get('due')]
+        states = {}
+        for c in scope:
+            states[c['goals'][0]['state']] = states.get(c['goals'][0]['state'],0)+1
+        ontime = sum(c['goals'][0]['state']=='achieved' for c in due)
+        late = sum(c['goals'][0]['state']=='late' for c in due)
+        missed = sum(c['goals'][0]['state'] in ('overdue','risk') for c in due)
+        review = sum(c['goals'][0]['state']=='review' for c in scope)
+        rate = f'<strong>{ontime/len(due):.0%}</strong>' if due else '—'
+        return (label,state_bar(states),len(scope),len(due),ontime,rate,late,missed,len(scope)-len(due),review)
+    rows = [row(esc(key),items) for key,items in sorted(groups.items())]
+    rows.append(row(f'<strong>{text(lang,"total")}</strong>',cases))
+    headers = [tr(lang,'worker' if field=='worker' else 'year')]+[tr(lang,k) for k in
+               ('col_mix','col_scope','col_due','col_ontime','col_rate','col_late','col_missed','col_open','col_review')]
+    return table(headers,rows)
+
+
+def rate_bar(k,n,band):
+    rate = 100*k/n
+    low, high = 100*band[0], 100*band[1]
+    return (f'<svg class="rate-bar" viewBox="0 0 100 14" preserveAspectRatio="none" aria-hidden="true" focusable="false">'
+            f'<rect class="track" x="0" y="4" width="100" height="6"/><rect class="rate" x="0" y="4" width="{rate:.2f}" height="6"/>'
+            f'<rect class="band" x="{low:.2f}" y="1" width="{high-low:.2f}" height="12"/></svg>')
+
+
+def insight(lang,public):
+    shown = [row for row in public if row[1]]
+    if len(shown)<2:
+        return ''
+    high = max(shown,key=lambda r:r[3]/r[1])
+    low = min(shown,key=lambda r:r[3]/r[1])
+    sentence = say(lang,'insight',high=tr(lang,high[0]),high_rate=f'{high[3]/high[1]:.0%}',high_n=high[1],
+                   low=tr(lang,low[0]),low_rate=f'{low[3]/low[1]:.0%}',low_n=low[1],
+                   diff=round(100*(high[3]/high[1]-low[3]/low[1])))
+    separate = low[4][1] < high[4][0]
+    return f'<p class="insight">{sentence} {text(lang,"insight_clear" if separate else "insight_overlap")}</p>'
 
 
 def overview(lang,snapshot,cases,management,dimension='year',intake_categories=None,goal_index=0,trend=()):
@@ -350,13 +874,14 @@ def overview(lang,snapshot,cases,management,dimension='year',intake_categories=N
                ('follow',sum(s[key] for key in ('risk','overdue','review'))))
     if management and snapshot['source']!='synthetic':
         metrics = tuple((key,'—') for key,_ in metrics)
-    kpis = ''.join(f'<article class="kpi"><span>{text(lang,k)}</span><strong>{v}</strong></article>' for k,v in metrics)
+    kpis = ''.join(f'<article class="kpi kpi-{k}">{icon(k,"kpi-icon")}<span>{text(lang,k)}</span><strong>{v}</strong></article>' for k,v in metrics)
     goals = []
     for i,key in enumerate(('a1','work','household')):
         totals = rules.counts(cases,i)
         statuses = [(state,count) for state,count in totals.most_common() if snapshot['source']=='synthetic' or not management]
         rows = ''.join(f'<li>{badge(lang,state)}<strong>{count}</strong></li>' for state,count in statuses)
-        goals.append(f'<article class="panel"><h3>{text(lang,key)}</h3><ul class="breakdown">{rows}</ul></article>')
+        bar = state_bar(dict(statuses))
+        goals.append(f'<article class="panel goal-card goal-{i+1}"><p class="goal-number">{i+1}</p><h3>{text(lang,key)}</h3>{bar}<ul class="breakdown">{rows}</ul></article>')
     factor_panel = ''
     if snapshot['source']=='synthetic':
         from datetime import date
@@ -367,10 +892,11 @@ def overview(lang,snapshot,cases,management,dimension='year',intake_categories=N
                                for i,k in enumerate(('a1','work','household')))
         comparator = max(public,key=lambda row:row[1],default=None)
         baseline = comparator[3]/comparator[1] if comparator else None
-        rendered = table([tr(lang,'category'),'n',tr(lang,'observed_rate'),tr(lang,'met'),tr(lang,'confidence_interval'),tr(lang,'difference')],
-          ((text(lang,label),esc(n) if n else text(lang,'suppressed'), f'{observed/n:.1%}' if n else '—',
-            f'{k/n:.1%}' if n else '—',f'{band[0]:.0%}–{band[1]:.0%}' if band else '—',
+        rendered = table([tr(lang,'category'),tr(lang,'rate_chart'),'n',tr(lang,'met'),tr(lang,'observed_rate'),tr(lang,'confidence_interval'),tr(lang,'difference')],
+          ((text(lang,label),rate_bar(k,n,band) if n else '',esc(n) if n else text(lang,'suppressed'),
+            f'<strong>{k/n:.0%}</strong>' if n else '—',f'{observed/n:.0%}' if n else '—',f'{band[0]:.0%}–{band[1]:.0%}' if band else '—',
             f'{(k/n-baseline)*100:+.1f} pp' if n else '—') for label,n,observed,k,band in breakdown))
+        finding = insight(lang,public)
         window = text(lang,'observation' if goal_index==0 else 'observed_to_date')
         upcoming = esc(coverage['upcoming']) if coverage.get('upcoming') is not None else text(lang,'suppressed')
         missing = esc(coverage['missing']) if coverage.get('missing') is not None else text(lang,'suppressed')
@@ -391,18 +917,21 @@ def overview(lang,snapshot,cases,management,dimension='year',intake_categories=N
                 values = (text(lang,'suppressed'),)*5 if 0<len(items)<rules.MIN_GROUP else tuple(esc(n) for n in workload(items))
                 workload_rows.append((text(lang,'unassigned') if key=='–' else esc(key),*values))
         caseload = table([tr(lang,k) for k in ('worker','people','homes','due_soon','review','quality')],workload_rows)
-        factor_panel = f'<section class="panel"><h2>{text(lang,"explorer")}</h2><p>{window} · {esc(snapshot["asof"])} · {text(lang,"upcoming_due")} {upcoming} · {text(lang,"missing")} {missing}</p><div class="chips">{goal_choices}</div><div class="chips">{choices}</div>{rendered}<p>{text(lang,"analysis_note")}</p><p>{text(lang,"source_limit")}</p><a class="button" href="{aggregates}">{text(lang,"safe_aggregates")}</a></section><section class="panel"><h2>{text(lang,"caseload")}</h2>{caseload}<p>{text(lang,"quality_note")}</p></section>'
+        targets = (f'<section class="panel targets"><div class="section-head"><h2>{text(lang,"targets_title")}</h2>{tip(lang,"help_targets")}</div>'
+                   f'<p>{text(lang,"targets_lead")}</p><h3>{text(lang,"by_worker")}</h3>{a1_targets(lang,cases,"worker")}'
+                   f'<h3>{text(lang,"by_year")}</h3>{a1_targets(lang,cases,"entry")}<p class="muted">{text(lang,"targets_note")}</p></section>')
+        factor_panel = targets+f'<section class="panel"><div class="section-head"><h2>{text(lang,"level2_title")}</h2>{tip(lang,"help_factor")}</div>{finding}<p class="muted">{text(lang,"synthetic_patterns")}</p><p>{window} · {esc(swiss(snapshot["asof"]))} · {text(lang,"upcoming_due")} {upcoming} · {text(lang,"missing")} {missing}</p><div class="chips">{goal_choices}</div><div class="chips">{choices}</div>{rendered}<p>{text(lang,"analysis_note")}</p><p>{text(lang,"source_limit")}</p><div class="button-row"><a class="button" href="{aggregates}">{text(lang,"safe_aggregates")}</a>{tip(lang,"help_aggregates")}</div></section><section class="panel"><h2>{text(lang,"caseload")}</h2>{caseload}<p>{text(lang,"quality_note")}</p></section>'
     import json
     sources = json.loads(snapshot['inspected'])
     coverage_card = f'<section class="panel"><h2>{text(lang,"coverage_overview")}</h2><dl><dt>{text(lang,"sources_present")}</dt><dd>{len(sources)}</dd><dt>{text(lang,"nonempty_sources")}</dt><dd>{sum(n>0 for n in sources.values())}</dd></dl><a href="/reports">{text(lang,"reports")}</a></section>'
     trend_card = ''
     if trend:
-        rows = ((esc(d),esc(n),esc(k),f'{k/n:.1%}' if n else text(lang,'suppressed')) for d,n,k in trend)
+        rows = ((esc(swiss(d)),esc(n),esc(k),f'{k/n:.1%}' if n else text(lang,'suppressed')) for d,n,k in trend)
         trend_card = f'<section class="panel"><h2>{text(lang,"trend")}</h2>'+table(
             [tr(lang,'snapshot'),tr(lang,'scope_in'),tr(lang,'met'),'%'],rows)+'</section>'
     return f'''<section class="hero"><img class="bern-image" src="/static/bern.jpg" alt=""><div class="hero-copy"><p class="eyebrow">{text(lang,'demo' if snapshot['source']=='synthetic' else 'local')}</p>
 {heading(lang,'overview',text(lang,'lead'))}</div></section>
-<div class="kpis">{kpis}</div><div class="two">{coverage_card}{trend_card}</div><h2>{text(lang,'goals')}</h2><div class="three">{''.join(goals)}</div>
+<div class="kpis">{kpis}</div><h2>{text(lang,'goals')}</h2><div class="three">{''.join(goals)}</div><div class="two">{coverage_card}{trend_card}</div>
 {factor_panel}'''
 
 
@@ -411,7 +940,7 @@ def analysis_export(lang,snapshot,cases,dimension,intake_categories,goal_index):
     asof = date.fromisoformat(snapshot['asof'])
     rows,coverage,_ = rules.analysis(cases,asof,dimension,intake_categories,goal_index)
     return {
-        tr(lang,'sheet_metadata'): [[tr(lang,'snapshot'),asof],[tr(lang,'source'),tr(lang,'demo')],
+        tr(lang,'sheet_metadata'): [[tr(lang,'field'),tr(lang,'value')],[tr(lang,'snapshot'),asof],[tr(lang,'source'),tr(lang,'demo')],
                      [tr(lang,'goals'),tr(lang,('a1','work','household')[goal_index])],
                      [tr(lang,'category'),tr(lang,dimension if goal_index==0 else 'cutoff_year')],
                      [tr(lang,'upcoming_due'),coverage.get('upcoming')],[tr(lang,'missing'),coverage.get('missing')]],
@@ -421,85 +950,184 @@ def analysis_export(lang,snapshot,cases,dimension,intake_categories,goal_index):
     }
 
 
-def queue(lang,cases,query,page,filter_state):
-    limits = {'overdue':0,'risk':1,'review':2,'ontrack':3,'late':4,'achieved':5,'na':6}
-    cases = [c for c in cases if query.casefold() in c['id'].casefold()
-             and (not filter_state or c['goals'][0]['state']==filter_state)]
-    cases.sort(key=lambda c:(limits[c['goals'][0]['state']],str(c['goals'][0]['deadline'] or '9999'),c['id']))
+LIGHT_SYMBOLS = {'achieved':'✓','late':'!','ontrack':'→','risk':'!','overdue':'!','review':'?','na':'–'}
+
+
+def lights(lang,case):
+    # One traffic light per goal; colour, symbol and a text label so meaning never depends on colour alone.
+    return '<span class="lights">'+''.join(
+        f'<span class="light {esc(g["state"])}" title="{text(lang,key)}: {text(lang,g["state"])}">'
+        f'<i aria-hidden="true">{LIGHT_SYMBOLS[g["state"]]}</i><span class="visually-hidden">{text(lang,key)}: {text(lang,g["state"])}</span></span>'
+        for key,g in zip(('a1','work','household'),case['goals']))+'</span>'
+
+
+def when_label(lang,action):
+    if action['when'] is None:
+        return '—'
+    days = action['days']
+    relative = text(lang,'today') if days==0 else say(lang,'in_days',n=days) if days>0 else say(lang,'days_ago',n=-days)
+    return f'<span class="when"><strong>{swiss(action["when"])}</strong><small>{relative}</small></span>'
+
+
+def action_label(lang,action):
+    goal = tr(lang,('a1','work','household')[action['goal']]) if action['goal'] is not None else ''
+    return say(lang,action['key'],date=swiss(action['when']),days=abs(action['days'] or 0),goal=goal)
+
+
+def unrecorded(case):
+    """A goal reached on time whose official record is missing or carries another date."""
+    return any(g['state']=='achieved' and (g.get('official_undated') or set(g.get('official_dates',()))!={g['achieved']})
+               for g in case['goals'])
+
+
+def queue(lang,cases,query,page,filter_state,asof):
+    planned = [(c,rules.next_action(c,asof)) for c in cases if query.casefold() in c['id'].casefold()]
+    week = [(c,a) for c,a in planned if a['week']]
+    if filter_state=='week':
+        planned = week
+    elif filter_state=='zemis':
+        planned = [(c,a) for c,a in planned if c['zemis_findings']]
+    elif filter_state=='record':
+        planned = [(c,a) for c,a in planned if unrecorded(c)]
+    elif filter_state:
+        planned = [(c,a) for c,a in planned if c['goals'][0]['state']==filter_state]
+    order = lambda item:(item[1]['rank'],str(item[1]['when'] or '9999'),item[0]['id'])
+    planned.sort(key=order)
+    week.sort(key=order)
     offset = (page-1)*20
-    options = ''.join(f'<option value="{key}" {"selected" if key==filter_state else ""}>{text(lang,key)}</option>' for key in limits)
+    states = ('week','record','zemis','overdue','risk','review','ontrack','late','achieved','na')
+    options = ''.join(f'<option value="{key}" {"selected" if key==filter_state else ""}>{text(lang,key)}</option>' for key in states)
     form = f'''<form class="inline" action="/queue"><label>{text(lang,'search')} <input name="q" value="{esc(query)}"></label>
-<label>{text(lang,'status_filter')} · {text(lang,'a1')} <select name="state"><option value="">{text(lang,'all_statuses')}</option>{options}</select></label>{action(lang,'search')}<a class="chip" href="/queue">{text(lang,'reset_filters')}</a></form>'''
-    rows = ((f'<a class="case-link" href="/case/{quote(c["id"],safe="")}">{esc(c["id"])}</a>',
-             *(badge(lang,g['state']) for g in c['goals']),esc(c['goals'][0]['deadline']),text(lang,c['goals'][0]['reason']))
-            for c in cases[offset:offset+20])
+<label>{text(lang,'status_filter')} · {text(lang,'a1')} <select name="state"><option value="">{text(lang,'all_statuses')}</option>{options}</select></label>{action(lang,'search')}{tip(lang,'help_search')}<a class="chip" href="/queue">{text(lang,'reset_filters')}</a>{tip(lang,'help_reset')}</form>'''
+    spotlight = ''
+    if not query and not filter_state and page==1 and week:
+        items = ''.join(f'''<li><div class="week-head"><a class="case-link" href="/case/{quote(c["id"],safe="")}">{esc(c["id"])}</a>{lights(lang,c)}<span class="worker">{esc(c["worker"])}</span></div>
+<p>{action_label(lang,a)}</p>{when_label(lang,a)}</li>''' for c,a in week[:6])
+        spotlight = (f'<section class="panel week"><div class="section-head"><h2>{text(lang,"this_week")}</h2>{tip(lang,"help_week")}</div>'
+                     f'<p>{say(lang,"this_week_note",n=len(week))}</p><ol class="week-list">{items}</ol>'
+                     f'<a class="button" href="{href("/queue",state="week")}">{say(lang,"show_all_week",n=len(week))}</a></section>')
+    rows = ((f'<a class="case-link" href="/case/{quote(c["id"],safe="")}">{esc(c["id"])}</a>',lights(lang,c),
+             action_label(lang,a),when_label(lang,a),esc(c['worker']))
+            for c,a in planned[offset:offset+20])
     pagination = '<div class="pagination">'
     if page>1:
         pagination += f'<a href="{href("/queue",q=query,state=filter_state,page=page-1)}">{text(lang,"previous")}</a>'
-    if offset+20<len(cases):
+    if offset+20<len(planned):
         pagination += f'<a href="{href("/queue",q=query,state=filter_state,page=page+1)}">{text(lang,"next")}</a>'
-    count = f'<p class="result-count">{text(lang,"queue_count")} · {len(cases)} · {text(lang,"page_number")} {page}</p>'
-    if not cases[offset:offset+20]:
-        return heading(lang,'queue')+form+count+f'<section class="panel"><p>{text(lang,"empty_queue")}</p></section>'+pagination+'</div>'
-    return heading(lang,'queue')+form+count+table([tr(lang,'case_identifier'),*(tr(lang,k) for k in ('a1','work','household','deadline','reason'))],rows)+pagination+'</div>'
+    count = f'<p class="result-count">{text(lang,"queue_count")} · {len(planned)} · {text(lang,"page_number")} {page}</p>'
+    legend = f'<p class="legend">{text(lang,"ampel_legend")}</p>'
+    head = heading(lang,'queue',text(lang,'queue_lead'))+spotlight+f'<div class="section-head"><h2>{text(lang,"all_cases")}</h2>{tip(lang,"help_case_link")}</div>'+form+legend+count
+    if not planned[offset:offset+20]:
+        return head+f'<section class="panel"><p>{text(lang,"empty_queue")}</p></section>'+pagination+'</div>'
+    return head+table([tr(lang,'case_identifier'),tr(lang,'lights_header'),tr(lang,'next_step'),tr(lang,'when'),tr(lang,'worker')],rows)+pagination+'</div>'
 
 
-def detail(lang,case):
+def source_row(case,dataset,line):
+    for rows in (case['tables'].get(dataset) or (),case['household'].get(dataset) or ()):
+        for row in rows:
+            if row['_line']==line:
+                return row
+    return None
+
+
+def describe(lang,dataset,row):
+    # Source values stay verbatim (German), only dates are shown in Swiss format.
+    v = lambda key: row.get(key)
+    span = lambda a,b: f'{swiss(v(a)) or "—"} – {swiss(v(b)) if v(b) else tr(lang,"open")}'
+    parts = {
+        'language':(v('Sprache'),v('Sprachniveau'),v('Art'),v('Bemerkungen'),swiss(v('Datum Erreichung'))),
+        'official':(v('Art'),swiss(v('Erreicht am')),v('Partner')),
+        'work':(v('Arbeitgeber Name'),f'{v("Pensum %")} %' if v('Pensum %') is not None else None,v('Erwerbsstatus'),span('Von','Bis'),v('Bemerkungen')),
+        'education':(v('Art'),v('Bezeichnung'),v('Institution Name'),span('Start','Abschluss')),
+        'membership':(v('Beziehung'),v('Rolle'),span('Dossierperson Von','Dossierperson Bis')),
+        'support':(v('Unterstützung'),span('Finanzielle Unterstützung Gültig von','Finanzielle Unterstützung Gültig bis'),v('Hauptgrund Beendigung Unterstützung')),
+    }.get(dataset,())
+    return ' · '.join(esc(p) for p in parts if p not in (None,''))
+
+
+def explain(lang,goal,asof):
+    deadline, achieved = goal['deadline'], goal['achieved']
+    days = abs((deadline-asof).days) if deadline else 0
+    key = 'exp_'+goal['state']
+    if goal['state'] in ('review','na') or not deadline:
+        return say(lang,'exp_na' if goal['state']=='na' else 'exp_review',reason=tr(lang,goal['reason']))
+    sentence = say(lang,key,deadline=swiss(deadline),achieved=swiss(achieved),days=days)
+    if goal['state'] in ('achieved','late'):
+        dates = ', '.join(swiss(d) for d in goal.get('official_dates',()))
+        sentence += ' '+(say(lang,'exp_official_yes',dates=dates) if dates else text(lang,'exp_official_no'))
+    return sentence
+
+
+def detail(lang,case,asof):
+    step = rules.next_action(case,asof)
+    facts = [(tr(lang,'worker'),case['worker']),(tr(lang,'status_label'),case['status']),(tr(lang,'entry_date'),swiss(case['entry'])),
+             (tr(lang,'age_label'),case['age']),(tr(lang,'household_id'),case['home'])]
+    summary = ''.join(f'<div><span>{esc(k)}</span><strong>{esc(v)}</strong></div>' for k,v in facts)
+    callout = (f'<section class="callout {"urgent" if step["week"] else ""}"><p class="eyebrow-dark">{text(lang,"next_step")}</p>'
+               f'<p class="callout-text">{action_label(lang,step)}</p>{when_label(lang,step)}</section>')
     sections = []
     for key,g in zip(('a1','work','household'),case['goals']):
-        ev = ', '.join(f'{esc(k)} #{line}' for k,line in g['evidence']) or '—'
-        rows = [(tr(lang,'deadline'),g['deadline']),(tr(lang,'attained'),g['achieved']),(tr(lang,'scenario'),g['earliest'])]
-        official = ', '.join(map(str,g.get('official_dates',())))
-        if g.get('official_undated'):
-            official = (official+' · ' if official else '')+tr(lang,'undated_proof')
-        rows.append((tr(lang,'official_dates'),official or None))
+        rows = [(tr(lang,'deadline'),swiss(g['deadline'])),(tr(lang,'attained'),swiss(g['achieved'])),(tr(lang,'scenario'),swiss(g['earliest']))]
         if key=='a1':
             due_key = {True:'due_now',False:'upcoming_due',None:'due_unknown'}[g.get('due')]
-            due = tr(lang,due_key) if g['scope']=='scope_in' else None
-            rows.extend([(tr(lang,'scope'),tr(lang,g['scope'])),(tr(lang,'entry_date'),case['entry']),
-                         (tr(lang,'due_status'),due)])
+            rows.extend([(tr(lang,'scope'),tr(lang,g['scope'])),(tr(lang,'entry_date'),swiss(case['entry'])),
+                         (tr(lang,'due_status'),tr(lang,due_key) if g['scope']=='scope_in' else None)])
         elif key=='work':
-            rows.extend((tr(lang,label),case[field]) for label,field in (
+            rows.extend((tr(lang,label),swiss(case[field])) for label,field in (
                 ('baseline_end','end'),('reference_end','reference_end'),('transition_end','transition_end')))
         else:
-            rows.append((tr(lang,'period_start'),g.get('period_start')))
-        facts = ''.join(f'<dt>{esc(k)}</dt><dd>{esc(v)}</dd>' for k,v in rows)
-        sections.append(f'<section class="panel"><h2>{text(lang,key)}</h2>{badge(lang,g["state"])}<p>{text(lang,g["reason"])}</p><dl>{facts}<dt>{text(lang,"evidence")}</dt><dd>{ev}</dd></dl></section>')
+            rows.append((tr(lang,'period_start'),swiss(g.get('period_start'))))
+        facts_list = ''.join(f'<dt>{esc(k)}</dt><dd>{esc(v)}</dd>' for k,v in rows)
+        evidence = []
+        for dataset,line in g['evidence']:
+            row = source_row(case,dataset,line)
+            body = describe(lang,dataset,row) if row else ''
+            evidence.append(f'<li><span class="source-tag">{esc(DATASET_NAMES.get(dataset,dataset))} · {text(lang,"row")} {esc(line)}</span>{body}</li>')
+        evidence_html = f'<ul class="evidence">{"".join(evidence)}</ul>' if evidence else f'<p class="muted">{text(lang,"no_evidence")}</p>'
+        sections.append(f'''<section class="panel goal-detail"><h2>{text(lang,key)}</h2>{badge(lang,g["state"])}
+<p class="reason">{text(lang,g["reason"])}</p><div class="explain"><h3>{text(lang,"what_means")}</h3><p>{explain(lang,g,asof)}</p></div>
+<h3>{text(lang,"evidence_rows")}</h3>{evidence_html}<details><summary>{text(lang,"deadline")} · {text(lang,"policy")}</summary><dl>{facts_list}</dl></details></section>''')
     timeline = []
     for dataset, label, start, end, fact in (
         ('work','work','Von','Bis','Erwerbsstatus'),('education','education','Start','Abschluss','Art'),
         ('housing','housing','Unterbringung Von','Unterbringung Bis','Unterbringung Art'),
-        ('status','case','Verfahrensstand Gültig ab','Verfahrensstand Gültig bis','Verfahrensstand')):
+        ('status','status','Verfahrensstand Gültig ab','Verfahrensstand Gültig bis','Verfahrensstand')):
         for record in case['tables'][dataset][:20]:
             timeline.append((record.get(start) or '',record.get(end),label,record.get(fact)))
     rows = table([tr(lang,'source'),tr(lang,'category'),tr(lang,'deadline'),tr(lang,'date_until')],
-        ((text(lang,label),esc(value),esc(a),esc(b)) for a,b,label,value in sorted(timeline,key=lambda row:row[0],reverse=True)))
+        ((esc(DATASET_NAMES[label]),esc(value),esc(swiss(a)),esc(swiss(b))) for a,b,label,value in sorted(timeline,key=lambda row:row[0],reverse=True)))
     quality = ''
     if case['zemis_findings']:
+        def zemis_label(line):
+            row = source_row(case,'zemis',line) or {}
+            return say(lang,'zemis_job',company=row.get('Betrieb'),date=swiss(row.get('Arbeitsbeginn')))
         findings = table(['ZEMIS',tr(lang,'result'),tr(lang,'evidence')],
-                         ((esc(line),text(lang,reason),esc(', '.join(map(str,rows))))
+                         ((zemis_label(line),text(lang,reason),esc(', '.join(f'Erwerb {tr(lang,"row")} {r}' for r in rows) or '—'))
                           for line,reason,rows in case['zemis_findings']))
         quality = f'<section class="panel"><h2>{text(lang,"quality")}</h2>{findings}</section>'
-    return heading(lang,'case',esc(case['id']))+f'<a class="chip back-link" href="/queue">{text(lang,"back_queue")}</a><div class="three">'+''.join(sections)+f'</div><section class="panel"><h2>{text(lang,"timeline")}</h2>{rows}</section>{quality}'
+    back = f'<div class="back-row"><a class="chip back-link" href="/queue">{text(lang,"back_queue")}</a>{tip(lang,"help_back")}</div>'
+    return (heading(lang,'case',esc(case['id']))+back+f'<div class="case-summary">{summary}</div>'+callout+
+            f'<p class="legend">{text(lang,"ampel_legend")}</p><div class="three">'+''.join(sections)+
+            f'</div><section class="panel"><h2>{text(lang,"timeline")}</h2>{rows}</section>{quality}')
 
 
 
 def reports(lang,snapshot,history,role,csrf,hosted,notice='',issues=(),manifest=()):
-    report = f'<a class="button" href="/export">{text(lang,"export")}</a>' if role!='importer' and snapshot else ''
+    report = f'<span class="button-row"><a class="button" href="/export">{text(lang,"export")}</a>{tip(lang,"help_export")}</span>' if role!='importer' and snapshot else ''
     import_controls = ''
     if role in ('judge','importer'):
         button = action(lang,'synthetic_load')
         options = ''.join(f'<option>{d}</option>' for d in MONTHS)
         exercise = options+f'<option value="{PHASE4_MONTH}">{PHASE4_MONTH} · {text(lang,"phase4_fixture")}</option>'
         exercise += f'<option value="{PHASE5_MONTH}">{PHASE5_MONTH} · {text(lang,"phase5_fixture")}</option>'
-        import_controls = post('/seed',csrf,f'<label>{text(lang,"snapshot")} <select name="date">{exercise}</select></label>{button}')
+        import_controls = post('/seed',csrf,f'<label>{text(lang,"snapshot")} <select name="date">{exercise}</select></label>{button}{tip(lang,"help_seed")}')
         import_controls += post('/seed-invalid',csrf,
-            f'<label>{text(lang,"snapshot")} <select name="date">{options}</select></label>'+action(lang,'invalid_demo'))
-        report += f'<a class="button" href="/quality">{text(lang,"quality_export")}</a>'
+            f'<label>{text(lang,"snapshot")} <select name="date">{options}</select></label>'+action(lang,'invalid_demo')+tip(lang,'help_invalid'))
+        report += f'<span class="button-row"><a class="button" href="/quality">{text(lang,"quality_export")}</a>{tip(lang,"help_quality")}</span>'
         if not hosted:
             import_controls += post('/import',csrf,
                 f'<label>{text(lang,"snapshot")} <input name="date" type="date" required></label>'
-                f'<label>Excel <input name="workbooks" type="file" accept=".xlsx" multiple required></label>{action(lang,"import")}',True)
+                f'<label>Excel <input name="workbooks" type="file" accept=".xlsx" multiple required></label>{action(lang,"import")}{tip(lang,"help_upload")}',True)
     current = ''
     if snapshot:
         import json
@@ -508,9 +1136,9 @@ def reports(lang,snapshot,history,role,csrf,hosted,notice='',issues=(),manifest=
         if manifest:
             records = table([tr(lang,'source'),tr(lang,'fingerprint')],
                             ((esc(r['dataset']),'<code>'+esc(r['sha256'])+'</code>') for r in manifest))
-            current += f'<details><summary>{text(lang,"fingerprint")}</summary>{records}</details>'
+            current += f'<details><summary>{text(lang,"fingerprint")}</summary>{records}</details>{tip(lang,"help_fingerprint")}'
     choices = ''.join(f'<option value="{r["id"]}">{esc(r["asof"])} · {text(lang,"demo" if r["source"]=="synthetic" else "local")}</option>' for r in history)
-    history_form = post('/snapshot',csrf,f'<label>{text(lang,"snapshot")} <select name="id">{choices}</select></label>{action(lang,"choose")}') if choices else ''
+    history_form = post('/snapshot',csrf,f'<label>{text(lang,"snapshot")} <select name="id">{choices}</select></label>{action(lang,"choose")}{tip(lang,"help_choose_snapshot")}') if choices else ''
     errors = ''.join(f'<li>{esc(k)} · #{i} · {text(lang,r)}</li>' for k,i,r in issues)
     feedback = f'<div class="feedback" role="status">{text(lang,notice)}<ul>{errors}</ul></div>' if notice else ''
     return heading(lang,'reports')+feedback+f'''
@@ -523,9 +1151,9 @@ def quality_export(lang,snapshot,diagnostic,issues,counts,manifest):
     status = {'accepted':'uploaded','repeated':'repeated','rejected':'rejected'}
     hashes = {r['dataset']:r['sha256'] for r in manifest}
     return {
-        tr(lang,'sheet_import'): [[tr(lang,'snapshot'),snapshot['asof'] if snapshot else None],
+        tr(lang,'sheet_import'): [[tr(lang,'field'),tr(lang,'value')],[tr(lang,'snapshot'),date.fromisoformat(snapshot['asof']) if snapshot else None],
                    [tr(lang,'source'),tr(lang,'demo' if snapshot['source']=='synthetic' else 'local') if snapshot else None],
-                   [tr(lang,'import_attempt'),diagnostic['report_date'] if diagnostic else None],
+                   [tr(lang,'import_attempt'),date.fromisoformat(diagnostic['report_date']) if diagnostic and diagnostic['report_date'] else None],
                    [tr(lang,'result'),tr(lang,status[diagnostic['outcome']]) if diagnostic else None]],
         tr(lang,'sheet_sources'): [[tr(lang,'source'),tr(lang,'rows'),tr(lang,'fingerprint')]] +
                    [[k,n,hashes.get(k)] for k,n in counts.items()],
@@ -537,7 +1165,7 @@ def quality_export(lang,snapshot,diagnostic,issues,counts,manifest):
 def assistant(lang,topic,result,aggregate,intent='entry_cohort',asof=RULE_DATES[0]):
     topics = ''.join(f'<a class="chip" href="{href("/ai",topic=k,intent=intent,asof=asof)}" {"aria-current=page" if k==topic else ""}>{text(lang,k)}</a>' for k in SOURCES)
     dates = ''.join(f'<option {"selected" if d==asof else ""}>{esc(d)}</option>' for d in RULE_DATES)
-    date_picker = f'<form action="/ai"><input type="hidden" name="topic" value="{esc(topic)}"><input type="hidden" name="intent" value="{esc(intent)}"><label>{text(lang,"rule_date")} <select name="asof">{dates}</select></label>{action(lang,"choose")}</form>'
+    date_picker = f'<form action="/ai"><input type="hidden" name="topic" value="{esc(topic)}"><input type="hidden" name="intent" value="{esc(intent)}"><label>{text(lang,"rule_date")} <select name="asof">{dates}</select></label>{action(lang,"choose")}{tip(lang,"help_rule_date")}</form>'
     if result['mode']=='retrieval_only':
         fields = [('authority',result['owner']),('policy',result['version']),('published',result['available_from']),
                   ('effective',result['effective_from'] or tr(lang,'date_unspecified'))]
@@ -563,73 +1191,160 @@ def assistant(lang,topic,result,aggregate,intent='entry_cohort',asof=RULE_DATES[
             presentation = f'<p>{text(lang,"observation")} · {esc(aggregate["snapshot"])}</p>{groups}'
         else:
             presentation = f'<p>{text(lang,"suppressed")} · {esc(aggregate["snapshot"])}</p>'
-        aggregate_body = f'<div class="chips">{intents}</div>{presentation}<p>{text(lang,"group_note")}</p>'
+        aggregate_body = f'<div class="chips">{intents}{tip(lang,"help_intents")}</div>{presentation}<p>{text(lang,"group_note")}</p>'
     return heading(lang,'ai',text(lang,'retrieval'))+f'''
-<div class="chips">{topics}</div><section class="panel reading"><h2>{text(lang,topic)}</h2>{date_picker}{answer}</section>
+<div class="chips">{topics}{tip(lang,"help_topics")}</div><section class="panel reading"><h2>{text(lang,topic)}</h2>{date_picker}{answer}</section>
 <div class="two"><section class="panel"><h2>{text(lang,'privacy')}</h2><dl>
 <dt>{text(lang,'before')}</dt><dd><code>DEMO-00001 · 08.04.1987 · A1</code></dd>
 <dt>{text(lang,'after')}</dt><dd><code>{{"topic": "{esc(topic)}", "locale": "{LOCALES[lang]}", "asof": "{esc(asof)}"}}</code></dd></dl><p>{text(lang,'local_release')}</p></section>
 <section class="panel"><h2>{text(lang,'explorer')}</h2>{aggregate_body}</section></div>'''
 
 
-def forecast(lang,report,tariffs,cases,series=None,can_upload=False,csrf='',candidate=None):
-    values = report['values']
-    top = max(values+[report['hi']])
-    bars = ''.join(f'<meter min="0" max="{top}" value="{v}" aria-label="{i+1}: {v}">{v}</meter>'
-                   for i,v in enumerate(values[-24:],len(values)-23))
-    from datetime import date
-    dates = [row[0] for row in series] if series else [rules.months(date(2022,1,1),i).strftime('%Y-%m') for i in range(len(values))]
-    observations = table([tr(lang,'month'),tr(lang,'count')],((esc(month),esc(v)) for month,v in zip(dates,values)))
-    forecast_month = rules.months(date.fromisoformat(dates[-1]+'-01'),report['horizon']).strftime('%Y-%m')
-    checks = table([tr(lang,'forecast'),tr(lang,'gate_error'),tr(lang,'heldout_error')],
-                   ((text(lang,'model_'+k),esc(report['gate_mae'][k]),esc(v)) for k,v in report['mae'].items()))
-    status = f'{text(lang,"model_"+report["model"])} · {text(lang,"heldout")} {report["heldout"]} · {text(lang,"interval_coverage")} {report["coverage"]:.0%}'
-    series_meta = f'{esc(dates[0])} → {esc(dates[-1])} · {len(values)} · '+text(lang,'aggregate_local' if series else 'demo')
+def figures(items):
+    return '<div class="figures">'+''.join(f'<div class="figure"><strong>{esc(v)}</strong><span>{label}</span></div>' for v,label in items)+'</div>'
+
+
+def chf(amount):
+    return 'CHF '+f'{amount:,}'.replace(',','’')
+
+
+def forecast(lang,report,tariffs,cases,series=None,can_upload=False,csrf='',candidate=None,can_queue=False):
+    sections = [('payments','pay_title'),('zemis','zemis_title'),('arrivals','arrivals_title')]
+    if candidate is not None:
+        sections.insert(1,('scenario','scenario2027'))
+    jump = ('<nav class="chips jump" aria-label="'+text(lang,'forecast')+'">'+''.join(f'<a class="chip" href="#{anchor}">{text(lang,key)}</a>' for anchor,key in sections)
+            +'</nav>'+tip(lang,'help_jump'))
+
+    summary = rules.payments(cases)
+    payment_rows = []
+    for key,tariff,(verified,unconfirmed,review) in zip(('a1','work','household'),tariffs,summary,strict=True):
+        payment_rows.append((text(lang,key),esc(verified),esc(unconfirmed),esc(review),
+                             f'<input type="number" aria-label="{text(lang,key)} · {text(lang,"rate_chf")}" name="rate_{key}" min="0" max="100000" value="{tariff}">',
+                             chf(verified*tariff)))
+    payable = sum(v*t for (v,_,_),t in zip(summary,tariffs))
+    pending = sum(u for _,u,_ in summary)
+    payment_rows.append((f'<strong>{text(lang,"pay_total")}</strong>',esc(sum(v for v,_,_ in summary)),esc(pending),
+                         esc(sum(r for *_,r in summary)),'',f'<strong>{chf(payable)}</strong>'))
+    pricing = table([tr(lang,k) for k in ('goals','verified_attainment','uncorroborated','review','rate_chf','amount_chf')],payment_rows)
+    open_note = ''
+    if pending:
+        missing = sum(u*t for (_,u,_),t in zip(summary,tariffs))
+        open_note = (say(lang,'pay_open',n=pending,amount=chf(missing)) if any(tariffs) else say(lang,'pay_open_count',n=pending))
+        link = f'<a class="button" href="{href("/queue",state="record")}">{text(lang,"pay_open_link")}</a>' if can_queue else ''
+        open_note = f'<div class="callout"><p class="callout-text">{open_note}</p>{link}</div>'
+    payments = (f'<section class="panel" id="payments"><div class="section-head"><h2>{text(lang,"pay_title")}</h2>{tip(lang,"help_pricing")}</div>'
+                f'<p>{text(lang,"pay_lead")}</p>{open_note}<form class="pricing" action="/forecast">{pricing}{action(lang,"calculate")}</form>'
+                f'<p class="legend">{text(lang,"payment_note")}</p></section>')
+
     scenario = ''
     if candidate is not None:
         changed = sum(a['end']!=b['effective_end'] for a,b in zip(cases,candidate,strict=True))
+        inherited = sum(b['entry'] is None and b['effective_end']!=a['end'] for a,b in zip(cases,candidate,strict=True))
         scenario_rows = []
+        overdue = risk = 0
         for i,key in enumerate(('a1','work','household')):
             baseline,before = rules.counts(cases,i),rules.counts(candidate,i)
+            overdue += before['overdue']-baseline['overdue']
+            risk += before['risk']-baseline['risk']
             for state in ('achieved','review','overdue','ontrack','risk'):
                 a,b = baseline[state],before[state]
                 scenario_rows.append((text(lang,key),text(lang,'met' if state=='achieved' and i==0 else state),esc(a),esc(b),f'{b-a:+d}'))
         comparison = table([tr(lang,k) for k in ('goals','result','baseline','candidate','difference_short')],scenario_rows)
-        payment_rows = []
-        for key,tariff,(verified,unconfirmed,review) in zip(('a1','work','household'),tariffs,rules.payments(cases),strict=True):
-            payment_rows.append((text(lang,key),esc(verified),esc(unconfirmed),esc(review),
-                                 f'<input type="number" aria-label="{text(lang,key)} · {text(lang,"rate_chf")}" name="rate_{key}" min="0" max="100000" value="{tariff}">',
-                                 f'CHF {verified*tariff:,}'))
-        pricing = table([tr(lang,k) for k in ('goals','verified_attainment','uncorroborated','review','rate_chf','amount_chf')],payment_rows)
-        scenario = f'<section class="panel"><h2>{text(lang,"scenario2027")}</h2><p>VA / F-FL · {esc(rules.RESPONSIBILITY_POLICY["version"])} · {changed}/{len(cases)}</p><p>{text(lang,"scenario_note")}</p>{comparison}</section><section class="panel"><h2>{text(lang,"payment_title")}</h2><p>{text(lang,"payment_note")}</p><form class="pricing" action="/forecast">{pricing}{action(lang,"choose")}</form></section>'
+        tiles = figures([(changed,text(lang,'scen_changed')),(f'{overdue:+d}',text(lang,'scen_overdue')),(f'{risk:+d}',text(lang,'scen_risk'))])
+        household = f'<p>{say(lang,"scen_household",n=inherited)}</p>' if inherited else ''
+        scenario = (f'<section class="panel" id="scenario"><div class="section-head"><h2>{text(lang,"scenario2027")}</h2>{tip(lang,"help_scenario")}</div>'
+                    f'<p>{text(lang,"scen_lead")}</p>{tiles}{household}<details><summary>{text(lang,"scenario_details")}</summary>{comparison}</details>'
+                    f'<p class="legend">{text(lang,"scen_confirm")} · {esc(rules.RESPONSIBILITY_POLICY["version"])}</p></section>')
+
+    reasons = {}
+    for case in cases:
+        for _,reason,_ in case['zemis_findings']:
+            reasons[reason] = reasons.get(reason,0)+1
+    people = sum(1 for c in cases if c['zemis_findings'])
+    if people:
+        zemis_body = figures([(people,text(lang,'zemis_people'))]+[(reasons.get(k,0),text(lang,k)) for k in ('zemis_no_overlap','zemis_employer_unknown','zemis_dates_unknown')])
+        if can_queue:
+            zemis_body += f'<a class="button" href="{href("/queue",state="zemis")}">{text(lang,"zemis_link")}</a>'
+    else:
+        zemis_body = f'<p>{text(lang,"zemis_none")}</p>'
+    zemis = (f'<section class="panel" id="zemis"><div class="section-head"><h2>{text(lang,"zemis_title")}</h2>{tip(lang,"help_zemis")}</div>'
+             f'<p>{text(lang,"zemis_lead")}</p>{zemis_body}</section>')
+
+    values = report['values']
+    top = max(values+[report['hi']])
+    bars = ''.join(f'<meter min="0" max="{top}" value="{v}" aria-label="{i+1}: {v}">{v}</meter>'
+                   for i,v in enumerate(values[-24:],len(values)-23))
+    dates = [row[0] for row in series] if series else [rules.months(date(2022,1,1),i).strftime('%Y-%m') for i in range(len(values))]
+    observations = table([tr(lang,'month'),tr(lang,'count')],((esc(month),esc(v)) for month,v in zip(dates,values)))
+    forecast_month = rules.months(date.fromisoformat(dates[-1]+'-01'),report['horizon']).strftime('%m.%Y')
+    checks = table([tr(lang,'forecast_model'),tr(lang,'gate_error'),tr(lang,'heldout_error')],
+                   ((text(lang,'model_'+k),esc(report['gate_mae'][k]),esc(v)) for k,v in report['mae'].items()))
+    status = f'{text(lang,"model_"+report["model"])} · {text(lang,"heldout")} {report["heldout"]} · {text(lang,"interval_coverage")} {report["coverage"]:.0%}'
+    series_meta = f'{esc(dates[0])} → {esc(dates[-1])} · {len(values)} · '+text(lang,'aggregate_local' if series else 'demo')
     controls = ''
     if can_upload:
-        controls = '<section class="panel"><p>'+text(lang,'aggregate_help')+'</p>'+post('/forecast-upload',csrf,
-            '<label>CSV <input type="file" name="series" accept=".csv,text/csv" required></label>'+action(lang,'aggregate_upload'),True)
+        controls = '<p>'+text(lang,'aggregate_help')+'</p>'+post('/forecast-upload',csrf,
+            '<label>CSV <input type="file" name="series" accept=".csv,text/csv" required></label>'+action(lang,'aggregate_upload')+tip(lang,'help_csv'),True)
         if series:
-            controls += post('/forecast-reset',csrf,action(lang,'aggregate_reset'))
-        controls += '</section>'
-    return heading(lang,'forecast',text(lang,'aggregate_local' if series else 'model'))+f'''
-<div class="two"><section class="panel reading"><h2>{text(lang,'interval')}</h2><strong class="forecast-value">{report['est']} <small>{report['lo']}–{report['hi']}</small></strong>
-<p>{status}</p><div class="series" aria-hidden="true">{bars}</div><details><summary>{text(lang,'data_card')}</summary>
-<p>{series_meta}</p>{observations}</details><p>{text(lang,'horizon')} · {forecast_month}</p></section>
-<section class="panel"><h2>MAE</h2><p>{text(lang,'validation_months')} · {report['validation_months']}<br>{text(lang,'gate_months')} · {report['gate_months']}</p>{checks}</section></div>
-<section class="panel"><h2>{text(lang,'public')}</h2><p>{text(lang,'public_note')}</p><a href="{FSO}">{text(lang,'source')} · BFS / FSO</a></section>{scenario}{controls}'''
+            controls += post('/forecast-reset',csrf,action(lang,'aggregate_reset')+tip(lang,'help_csv_reset'))
+    arrivals = f'''<section class="panel" id="arrivals"><h2>{text(lang,'arrivals_title')}</h2><p>{text(lang,'arrivals_lead')}</p>
+<div class="two"><div class="reading"><h3>{text(lang,'interval')} · {forecast_month}</h3><strong class="forecast-value">{report['est']} <small>{report['lo']}–{report['hi']}</small></strong>
+<p>{status}</p><div class="series" aria-hidden="true">{bars}</div>{tip(lang,'help_data_card')}<details><summary>{text(lang,'data_card')}</summary>
+<p>{series_meta}</p>{observations}</details></div>
+<div><h3>MAE</h3><p>{text(lang,'validation_months')} · {report['validation_months']}<br>{text(lang,'gate_months')} · {report['gate_months']}</p>{checks}</div></div>
+<h3>{text(lang,'public')}</h3><p>{text(lang,'public_note')}</p><a href="{FSO}">{text(lang,'source')} · BFS / FSO</a>{controls}</section>'''
+    return heading(lang,'forecast',text(lang,'plan_lead'))+f'<div class="section-head">{jump}</div>'+payments+scenario+zemis+arrivals
+
+
+def privacy(lang):
+    cards = ''.join(f'<section class="panel pv-card">{icon(name,"kpi-icon")}<h2>{text(lang,key)}</h2><p>{text(lang,key+"_text")}</p></section>'
+                    for name,key in (('homes','pv_stay'),('queue','pv_roles'),('privacy','pv_leave')))
+    flow = ''.join(f'<li>{text(lang,f"pv_flow_{i}")}</li>' for i in range(1,6))
+    access = {'pv_cases':('cell_all','cell_own','cell_no','cell_no'),'pv_overview':('cell_all','cell_own','cell_sums','cell_no'),
+              'pv_export':('cell_all','cell_own','cell_sums','cell_no'),'pv_import':('cell_all','cell_no','cell_no','cell_all'),
+              'pv_plan':('cell_all','cell_no','cell_sums','cell_no'),'pv_intake':('cell_all','cell_own','cell_no','cell_all')}
+    rows = ((text(lang,area),*(f'<span class="access {cell}">{text(lang,cell)}</span>' for cell in cells)) for area,cells in access.items())
+    who = table([tr(lang,'pv_area')]+[tr(lang,'role_'+r) for r in ('judge','worker','manager','importer')],rows)
+    listing = lambda key,n:'<ul class="plain">'+''.join(f'<li>{text(lang,f"{key}_{i}")}</li>' for i in range(1,n+1))+'</ul>'
+    return (heading(lang,'privacy',text(lang,'pv_lead'))+f'<div class="three">{cards}</div>'
+            f'<section class="panel"><h2>{text(lang,"pv_flow")}</h2><ol class="flow">{flow}</ol></section>'
+            f'<section class="panel"><h2>{text(lang,"pv_who")}</h2>{who}</section>'
+            f'<div class="two"><section class="panel"><h2>{text(lang,"pv_stored")}</h2>{listing("pv_stored",4)}</section>'
+            f'<section class="panel"><h2>{text(lang,"pv_out")}</h2>{listing("pv_out",3)}</section></div>'
+            f'<section class="panel"><h2>{text(lang,"pv_delete")}</h2><p>{text(lang,"pv_delete_text")}</p><p class="legend">{text(lang,"pv_demo")}</p></section>')
+
+
+def guide(lang,role):
+    menus = menus_for(role)
+    order = [('reports','/reports'),('overview','/overview'),('queue',href('/queue',state='week')),('case',href('/queue',state='week')),
+             ('forecast','/forecast'),('intake','/intake'),('ai','/ai')]
+    steps = ''.join(f'<li><h3>{icon("queue" if key=="case" else key,"nav-icon")}{text(lang,key)}</h3><p>{text(lang,"step_"+key)}</p>'
+                    f'<a href="{link}">{text(lang,"guide_open")} →</a></li>'
+                    for key,link in order if (key if key!='case' else 'queue') in menus)
+    terms = ''.join(f'<div><dt>{text(lang,"g_"+k)}</dt><dd>{text(lang,"g_"+k+"_text")}</dd></div>'
+                    for k in ('a1','work','household','lights','target','cutoff','small','zemis'))
+    return (heading(lang,'help',text(lang,'guide_lead'))+f'<section class="panel"><h2>{text(lang,"guide_steps")}</h2><ol class="steps">{steps}</ol></section>'
+            f'<section class="panel"><h2>{text(lang,"glossary")}</h2><dl class="glossary">{terms}</dl></section>')
 
 
 def login(lang,csrf,error=''):
-    return '<section class="login-hero"><img class="bern-image" src="/static/bern.jpg" alt=""><div><div class="login-signature"><img class="brand-flag" src="/static/bern-canton.png" alt=""><p class="eyebrow">'+text(lang,'demo')+'</p></div><h1>Integrations-<br>Cockpit Bern</h1><p>'+text(lang,'lead')+'</p></div></section><section class="login-card">'+heading(lang,'login')+(
+    return '<section class="login-hero"><img class="bern-image" src="/static/bern.jpg" alt=""><div><div class="login-signature"><img class="brand-mark" src="/static/stadt-bern-shield.png" alt="Stadt Bern"><p class="eyebrow">'+text(lang,'demo')+'</p></div><h1>Integrations-<br>Cockpit Bern</h1><p>'+text(lang,'lead')+'</p></div></section><section class="login-card"><img class="login-logo" src="/static/stadt-bern-logo.png" alt="Stadt Bern">'+heading(lang,'login')+(
         f'<p class="feedback" role="alert">{text(lang,error)}</p>' if error else '')+post('/login',csrf,
         f'<label>{text(lang,"username")}<input name="username" autocomplete="username" required></label>'
         f'<label>{text(lang,"password")}<input name="password" type="password" autocomplete="current-password" required></label>'
-        +action(lang,'login'))+'</section>'
+        +action(lang,'login')+tip(lang,'help_login'))+'</section>'
+
+
+def state_cell(lang,state):
+    return Cell(f'{LIGHT_SYMBOLS[state]} {tr(lang,state)}','state_'+state)
 
 
 def export(lang,snapshot,cases,role):
     keys = ('a1','work','household')
     source = tr(lang,'demo' if snapshot['source']=='synthetic' else 'local')
     import json
-    tabs = {tr(lang,'data_card'):[[tr(lang,'snapshot'),snapshot['asof']],[tr(lang,'source'),source],[tr(lang,'policy'),rules.VERSION]]}
+    asof = date.fromisoformat(snapshot['asof'])
+    tabs = {tr(lang,'data_card'):[[tr(lang,'field'),tr(lang,'value')],[tr(lang,'snapshot'),asof],[tr(lang,'source'),source],[tr(lang,'policy'),rules.VERSION]]}
     tabs[tr(lang,'data_card')].append([tr(lang,'reference_end'),rules.RESPONSIBILITY_POLICY['version']])
     coverage = [[tr(lang,'source'),tr(lang,'rows')]]+[[key,n] for key,n in json.loads(snapshot['inspected']).items()]
 
@@ -639,29 +1354,29 @@ def export(lang,snapshot,cases,role):
             row = [case['home'] if index==2 else case['id'],case['worker'] if index!=2 else None,
                    case['entry'].year if case['entry'] and index!=2 else None,
                    g['deadline'],g['achieved'],tr(lang,g['reason']),
-                   ', '.join(f'{dataset}:{line}' for dataset,line in g['evidence']),tr(lang,g['state'])]
+                   ', '.join(f'{DATASET_NAMES.get(dataset,dataset)} {line}' for dataset,line in g['evidence']),state_cell(lang,g['state'])]
             if index==0:
                 due = {True:'due_now',False:'upcoming_due',None:'due_unknown'}[g.get('due')]
-                dates = ', '.join(map(str,g.get('official_dates',())))
+                dates = ', '.join(map(swiss,g.get('official_dates',())))
                 row += [case['entry'],tr(lang,g['scope']),tr(lang,due) if g['scope']=='scope_in' else None,
                         dates or None,tr(lang,'undated_proof') if g.get('official_undated') else None,
                         tr(lang,'uncertain_proof') if g.get('proof_uncertain') else None]
             elif index==1:
-                row += [', '.join(map(str,g.get('official_dates',()))) or None,
+                row += [', '.join(map(swiss,g.get('official_dates',()))) or None,
                         tr(lang,'undated_proof') if g.get('official_undated') else None,
                         case['reference_end'],case['transition_end'],g['earliest']]
             else:
-                row[6] = ', '.join(f'{dataset}:{line}' for dataset,line in g['evidence'] if dataset!='official')
+                row[6] = ', '.join(f'{DATASET_NAMES.get(dataset,dataset)} {line}' for dataset,line in g['evidence'] if dataset!='official')
                 row += [g.get('period_start'),g['earliest']]
             yield row
     for i,key in enumerate(keys):
         selected = {c['home']:c for c in cases if c['goals'][i]['state']!='na'}.values() if i==2 else cases
         summary = rules.counts(cases,i)
         tabs[tr(lang,key)] = [[tr(lang,key),tr(lang,'rows')]] + [
-            [tr(lang,state),number] for state,number in sorted(summary.items())
+            [state_cell(lang,state),number] for state,number in sorted(summary.items())
             if role!='manager' or (snapshot['source']=='synthetic' and number>=rules.MIN_GROUP)]
         if role!='manager':
-            headers = ['ID',*[tr(lang,k) for k in ('worker','year','deadline','attained','reason','evidence')],tr(lang,'goals')]
+            headers = ['ID',*[tr(lang,k) for k in ('worker','year','deadline','attained','reason','evidence')],tr(lang,'result')]
             if i==0:
                 headers.extend(tr(lang,k) for k in ('entry_date','scope','due_status','official_dates','undated_proof','uncertain_proof'))
             elif i==1:
@@ -677,10 +1392,16 @@ def export(lang,snapshot,cases,role):
                 key = v.year if field=='entry' and v else v
                 groups.setdefault(str(key or '—'),[]).append(case)
             tabs[tr(lang,label)] = [[tr(lang,label),*(tr(lang,k) for k in rules.A1_TOTALS)]] + [
-                [key,*rules.a1_totals(items)] for key,items in sorted(groups.items())]
+                [key,*rules.a1_totals(items)] for key,items in sorted(groups.items())] + [
+                [Cell(tr(lang,'total'),'bold'),*(Cell(n,'bold') for n in rules.a1_totals(cases))]]
         tabs[tr(lang,'control_totals')] = [[tr(lang,k) for k in rules.A1_TOTALS],rules.a1_totals(cases)]
         tabs['ZEMIS'] = [[tr(lang,'case_identifier'),'ZEMIS',tr(lang,'result'),tr(lang,'evidence')]] + [
             [case['id'],line,tr(lang,reason),','.join(map(str,workbook_rows))]
             for case in cases for line,reason,workbook_rows in case['zemis_findings']]
+        planned = sorted(((c,rules.next_action(c,asof)) for c in cases),key=lambda item:(item[1]['rank'],str(item[1]['when'] or '9999'),item[0]['id']))
+        tabs[tr(lang,'this_week')] = [[tr(lang,'case_identifier'),tr(lang,'worker'),tr(lang,'next_step'),tr(lang,'when'),
+                                       *(tr(lang,k) for k in ('a1','work','household'))]] + [
+            [c['id'],c['worker'],unescape(action_label(lang,a)),a['when'],*(state_cell(lang,g['state']) for g in c['goals'])]
+            for c,a in planned if a['week']]
     tabs[tr(lang,'coverage')] = coverage
     return tabs

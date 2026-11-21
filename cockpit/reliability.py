@@ -69,6 +69,10 @@ def rates(results):
             for key,values in sorted(samples.items())}
 
 
+# The October A1 proof (12.10.2026) as an Excel date serial.
+OCTOBER_PROOF = b'<v>46307</v>'
+
+
 def workbook(output,proof=None):
     with ZipFile(BytesIO(output)) as archive:
         sheet = archive.read('xl/worksheets/sheet3.xml')
@@ -92,7 +96,7 @@ def exercise(workers=8,rounds=3,people=1000):
             def act(index):
                 client,token = clients[index],tokens[index]
                 side = index%2
-                expected = (b'2026-09-30',b'2026-10-31')[side]
+                expected = (b'30.09.2026',b'31.10.2026')[side]
                 barrier.wait()
                 observed = []
                 for _ in range(rounds):
@@ -101,11 +105,11 @@ def exercise(workers=8,rounds=3,people=1000):
                     for route in ('/overview','/queue','/case/DEMO-00001','/export'):
                         content,duration = client.request(route)
                         if route=='/export':
-                            workbook(content,b'2026-10-12' if side else None)
+                            workbook(content,OCTOBER_PROOF if side else None)
                             if not side:
                                 with ZipFile(BytesIO(content)) as exported:
                                     first = exported.read('xl/worksheets/sheet3.xml').split(b'</row>',2)[1]
-                                if b'2026-10-12' in first:
+                                if OCTOBER_PROOF in first:
                                     raise RuntimeError('October proof appeared in September export')
                         elif expected not in content:
                             raise RuntimeError('Snapshot state crossed sessions')
@@ -141,7 +145,7 @@ def exercise(workers=8,rounds=3,people=1000):
             verify.request('/export',303)
             verify.login(password)
             output,_ = verify.request('/export')
-            workbook(output,b'2026-10-12')
+            workbook(output,OCTOBER_PROOF)
             recovered_seconds = perf_counter()-restore_start
         return {'people_per_snapshot':people,'concurrent_sessions':workers,'rounds':rounds,
                 'measured_requests':sum(len(v) for v in observed),'request_errors':0,

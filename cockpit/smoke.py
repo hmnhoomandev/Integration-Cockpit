@@ -57,7 +57,7 @@ def verify(base, username, password):
         status, _, reports = request('/reports')
         require(status == 200, 'Reports page failed')
         form_token = csrf(reports)
-        for month, proof in zip(MONTHS, (b'Check certificate or schooling evidence', b'2026-10-12'), strict=True):
+        for month, proof in zip(MONTHS, (b'Check certificate or schooling evidence', b'12.10.2026'), strict=True):
             status, _, _ = request('/seed', {'csrf': form_token, 'date': month})
             require(status == 303, 'Synthetic snapshot replay failed')
             status, _, case = request('/case/DEMO-00001')
@@ -67,7 +67,7 @@ def verify(base, username, password):
         with ZipFile(BytesIO(workbook)) as archive:
             require(archive.testzip() is None, 'Workbook ZIP integrity failed')
             details = archive.read('xl/worksheets/sheet3.xml')
-            require(b'DEMO-00001' in details and b'2026-10-12' in details, 'Workbook evidence missing')
+            require(b'DEMO-00001' in details and b'<v>46307</v>' in details, 'Workbook evidence missing')
         status, _, _ = request('/seed-invalid', {'csrf':form_token,'date':MONTHS[0]})
         require(status==422, 'Incomplete import was not rejected')
         require(request('/export')[2]==workbook, 'Rejected import changed the selected results')

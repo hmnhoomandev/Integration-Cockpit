@@ -1,17 +1,39 @@
-# Cockpit d’intégration de Berne
+# Integrations-Cockpit Bern
 
 [English](../README.md) · [Deutsch](README.de.md)
 
-Ce prototype de hackathon rapproche onze exports Excel mensuels du service social de l’asile de la Ville de Berne. Il présente les échéances, les justificatifs et les prochaines vérifications pour les dossiers autorisés. La direction consulte des indicateurs agrégés.
+Prototype de hackathon pour le service social de l’asile de la Ville de Berne. Le cockpit lit les onze exports Excel mensuels et répond à trois questions :
 
-## Démonstration
+- Qui contacter cette semaine, et pourquoi ?
+- Combien de personnes atteignent les objectifs à temps, par gestionnaire et par année d’arrivée ?
+- Que rapportent les objectifs atteints, et que change 2027 ?
 
-[Accès HTTPS temporaire](https://listening-brian-served-upcoming.trycloudflare.com/login). Les identifiants sont transmis séparément. Dans **Données et rapports**, charger septembre 2026 puis ouvrir **DEMO-00001**. Le délai A1 est le 16 octobre. Après l’importation d’octobre, un justificatif fide daté du 12 octobre apparaît. Télécharger Excel puis explorer les cohortes, les règles et les prévisions.
+Tout fonctionne sur un seul ordinateur. Les données restent dans un fichier local, et le navigateur ne charge rien depuis d’autres adresses.
 
-## Exécution locale
+## Démarrer
 
-Dans le répertoire du projet, lancer `python3 -m cockpit.server serve --demo`, puis ouvrir http://127.0.0.1:8000. Python 3.12+ suffit pour les fonctions principales. L’analyse PDF emploie Poppler ou PDFKit sur macOS. Exécuter les tests avec `python3 -m unittest discover -s tests -v`.
+Il faut Python 3.12 ou plus récent, sans paquet supplémentaire.
 
-Le prototype applique des règles explicites aux objectifs de langue, d’emploi ou de formation et d’autonomie financière. L’accès individuel est limité aux dossiers attribués. Les prévisions portent sur des séries mensuelles agrégées avec des modèles de référence. L’assistant consulte localement les références approuvées. Les dossiers de démonstration sont synthétiques et les comparaisons publiques indiquent leur provenance.
+```sh
+python3 -m cockpit.server serve --demo
+```
 
-[Périmètre et vérification](ACCEPTANCE.md) · [Sources et règles](SOURCES.md) · [Sécurité](../SECURITY.md)
+Ouvrez ensuite <http://127.0.0.1:8000>. Au premier démarrage, l’identifiant et le mot de passe s’affichent une seule fois dans le terminal.
+
+1. **Suivi des dossiers → Cette semaine :** environ 170 contacts, classés par effet.
+2. **Ouvrir DEMO-00001.** En septembre, l’A1 est dû le 16.10.2026. Après le chargement d’octobre, une attestation fide du 12.10.2026 est arrivée, mais la saisie officielle manque encore.
+3. **Vue d’ensemble :**
+   - objectif et réalisé par gestionnaire et par année d’arrivée ;
+   - analyse de groupes avec intervalles : cours de langue dans les six premiers mois 73 %, plus tard 28 %.
+4. **Planification :**
+   - paiements ;
+   - scénario 2027 ;
+   - contrôle ZEMIS.
+5. **Rôle de démo** (en bas de la barre latérale) : les gestionnaires voient leurs dossiers, la direction seulement des totaux.
+6. **Télécharger Excel :** vraies dates au format suisse, avec les couleurs des feux.
+
+Le **!** jaune à côté de chaque commande explique son rôle. **Aide** et **Protection des données** se trouvent dans la navigation.
+
+Tests : `python3 -m unittest discover -s tests -v`
+
+[Sources et règles](SOURCES.md) · [Sécurité](../SECURITY.md) · [Pitch](PITCH.md)

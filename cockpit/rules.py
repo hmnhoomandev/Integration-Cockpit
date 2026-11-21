@@ -128,6 +128,18 @@ def goal1(person, entry, asof, tables):
                      'proof_uncertain':uncertain}
 
 
+# Demo assumption (ASD to confirm): the Erwerb export has no labour-market field. Employment
+# ('unselbstständig' / 'selbstständig') counts as first labour market unless the employer or remark
+# names an employment or integration programme, which is excluded rather than counted.
+SECOND_MARKET = re.compile(r'2\.\s*Arbeitsmarkt|Beschäftigungsprogramm|Beschäftigungsangebot|Integrationsprogramm|Arbeitsintegration',re.I)
+PRIMARY_STATUSES = {'unselbstständig','selbstständig','1. Arbeitsmarkt'}
+
+
+def primary_market(row):
+    remark = ' '.join(str(row.get(k) or '') for k in ('Bemerkungen','Arbeitgeber Name'))
+    return row.get('Erwerbsstatus') in PRIMARY_STATUSES and not SECOND_MARKET.search(remark)
+
+
 def goal2(tables, asof, start, end, synthetic=False):
     if not end:
         return result('review','missing_end')
@@ -140,9 +152,10 @@ def goal2(tables, asof, start, end, synthetic=False):
         if not isinstance(percent,(int,float)) or not 0<=percent<=100:
             unresolved.append(row)
         elif percent>=60:
-            if row.get('Von') and (row.get('Erwerbsstatus')=='1. Arbeitsmarkt'
-                                   or synthetic and row.get('Bemerkungen')=='Demo: 1. Arbeitsmarkt'):
+            if row.get('Von') and primary_market(row):
                 jobs.append(row)
+            elif row.get('Von') and SECOND_MARKET.search(' '.join(str(row.get(k) or '') for k in ('Bemerkungen','Arbeitgeber Name'))):
+                continue
             else:
                 unresolved.append(row)
     spans = intervals(jobs,'Von','Bis',start,cutoff)
@@ -310,7 +323,23 @@ def evaluate(snapshot, rows, candidate=False):
         entries = {as_date(r.get('Ereignisdatum')) for r in tables['events'] if r.get('Asylgeschäftsart')=='Aufenthalt (Einreise)'}
         entry = next(iter(entries)) if len(entries)==1 else None
         reference, transition = reference_ends(person.get('Verfahrensstand'),entry,tables['events'])
-        exported = as_date(person.get('Zuständigkeitsende'))
+        cutoffs[pid] = entry,reference,transition,as_date(person.get('Zuständigkeitsende'))
+    shared = {}
+    if candidate:
+        # A member without a dated entry follows the household's shifted cutoff when the exported ends agree.
+        members = defaultdict(list)
+        for person in rows.get('clients',[]):
+            members[person['Dossier-Nr.']].append(cutoffs[person['_person']])
+        for home,group in members.items():
+            moved = {t for _,_,t,_ in group if t is not None}
+            if len({e for *_,e in group})==1 and len(moved)==1:
+                shared[home] = next(iter(moved))
+    for person in rows.get('clients',[]):
+        pid = person['_person']
+        entry,reference,transition,exported = cutoffs[pid]
+        if (transition is None and person['Dossier-Nr.'] in shared and exported is not None
+                and person.get('Verfahrensstand') in {'VA','F-FL'}):
+            transition = shared[person['Dossier-Nr.']]
         effective = transition if candidate and transition is not None and exported is not None else exported
         ends[person['Dossier-Nr.']].add(effective)
         cutoffs[pid] = entry,reference,transition,effective
@@ -353,9 +382,49 @@ def evaluate(snapshot, rows, candidate=False):
         findings = zemis_reconcile(tables['zemis'],tables['work'],snapshot['asof'])
         gaps = [line for line,_,_ in findings]
         cases.append(dict(id=pid,worker=person.get('Fallführung') or '–',home=home,entry=entry,age=age,
-            status=status,school_years=person.get('Schuljahre vor Einreise'),mother_tongue=person.get('Muttersprache'),goals=(language,employment,financial),tables=tables,gaps=gaps,zemis_findings=findings,end=end,effective_end=effective_end,
+            status=status,school_years=person.get('Schuljahre vor Einreise'),mother_tongue=person.get('Muttersprache'),goals=(language,employment,financial),tables=tables,household=household[home],gaps=gaps,zemis_findings=findings,end=end,effective_end=effective_end,
             reference_end=reference_end,transition_end=transition_end))
     return cases
+
+
+# Ranked follow-up reasons. Lower rank first; ranks up to WEEK_RANK form "this week".
+# Ordered by whether contact can still change the outcome, never by personal traits.
+ACTION_RANKS = ('act_g1_risk','act_g1_record','act_g1_verify','act_goal_record','act_zemis','act_g2_verify',
+                'act_g2_soon','act_scope','act_g3_review','act_g1_plan','act_g1_missed','act_none')
+WEEK_RANK = ACTION_RANKS.index('act_g2_soon')
+
+
+def next_action(case, asof):
+    """The single most useful next step for one case, with the date it refers to."""
+    language, work, household = case['goals']
+    options = []
+    if language['state']=='risk':
+        options.append(('act_g1_risk',language['deadline'],0))
+    if language['state'] in ('achieved','late') and language['reason']=='proof_difference':
+        options.append(('act_g1_record',language['achieved'],0))
+    if language['state']=='review' and language['reason']=='verify_proof':
+        options.append(('act_g1_verify',language['deadline'],0))
+    for index,goal in ((1,work),(2,household)):
+        if goal['state'] in ('achieved','late') and not goal.get('official_dates') and not goal.get('official_undated'):
+            options.append(('act_goal_record',goal['achieved'],index))
+    if case['zemis_findings']:
+        options.append(('act_zemis',None,1))
+    if work['state']=='review' and work['reason']=='market_unknown':
+        options.append(('act_g2_verify',work['deadline'],1))
+    if work['earliest'] and (work['earliest']-asof).days<=60:
+        options.append(('act_g2_soon',work['earliest'],1))
+    if any(g['state']=='review' and g['reason'] in ('scope_unknown','entry_unknown','missing_end') for g in (language,work)):
+        options.append(('act_scope',None,0))
+    if household['state']=='review':
+        options.append(('act_g3_review',household['deadline'],2))
+    if language['state']=='ontrack' and language['deadline'] and (language['deadline']-asof).days<=365:
+        options.append(('act_g1_plan',language['deadline'],0))
+    if language['state']=='overdue':
+        options.append(('act_g1_missed',language['deadline'],0))
+    options.append(('act_none',None,None))
+    key,when,goal = min(options,key=lambda o:ACTION_RANKS.index(o[0]))
+    return dict(key=key,rank=ACTION_RANKS.index(key),when=when,goal=goal,
+                days=(when-asof).days if when else None,week=ACTION_RANKS.index(key)<=WEEK_RANK)
 
 
 A1_TOTALS = ('people','scope_in','scope_out','scope_review','due_now','upcoming_due','due_unknown',
@@ -425,11 +494,15 @@ def factor_group(case, dimension, goal, intake_categories):
     if dimension=='course':
         eligible = [row for row in case['tables']['education']
                     if row.get('Art') in ('Förderangebot Sprache','Sprachkurs im erweiterten Verfahren (N)')]
-        if any(not row.get('Start') for row in eligible):
+        if any(not row.get('Start') for row in eligible) or not case['entry']:
             return None
-        return 'course_yes' if any(r['Start']<=goal['deadline'].isoformat() for r in eligible) else 'course_none'
+        # Time from entry to the first language course: the factor ASD can act on.
+        started = [as_date(r['Start']) for r in eligible if r['Start']<=goal['deadline'].isoformat()]
+        if not started:
+            return 'course_none'
+        return 'course_early' if min(started)<=months(case['entry'],6) else 'course_late'
     age = case.get('age')
-    return ('16–29' if age<30 else '30–44' if age<45 else '45+') if age is not None else None
+    return ('16–24' if age<25 else '25–34' if age<35 else '35+') if age is not None else None
 
 
 def suppress_partition(groups):

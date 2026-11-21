@@ -1,23 +1,65 @@
 # Three-minute pitch
 
-## 0:00–0:30 · The problem
+## Before you go on stage
 
-“Bern’s asylum social service already has the evidence. It arrives in eleven Excel exports. Each month, someone has to find which deadline applies, whether the proof is missing, and what to do next. The question we started from was simple: who should I call this week, and why?”
+- Sign in as the demo account. Set the language the jury speaks: DE or EN.
+- In **Daten & Berichte**, load **30.09.2026**.
+- Keep two tabs open: **Fallführung** and **DEMO-00001**.
+- Close the terminal. Credentials must never appear on screen.
 
-## 0:30–1:30 · Live case and monthly update
+---
 
-Sign in before stepping on stage. Start in the September snapshot and open DEMO-00001 in Casework. Point out the 16 October deadline and the action to check a certificate. Briefly show the work and household cards.
+## 0:00–0:25 · The problem
 
-“In October a fide record arrived. Re-importing the same eleven exports updates the working view. The certificate was earned on 12 October, within the deadline. The official achievement table still needs reconciliation. Click Download Excel to take the reviewed results back into the existing workflow.”
+> “ASD is paid when a person reaches an integration goal before ASD’s responsibility ends: A1 German, work or education, and a household free of social assistance. The evidence already exists, but it is spread over eleven Excel exports. Every month someone has to work out which deadline applies, whether the proof is there, and who needs a call. So we asked one question: **who should I contact this week, and why?**”
 
-## 1:30–2:15 · Management, AI and privacy
+## 0:25–1:15 · The caseworker
 
-Show cohorts and denominators. Open the Rules assistant and its source citation. Point to the privacy preview and the exact released fields.
+*Show **Fallführung**, the “Diese Woche” box.*
 
-“Management can see, for example, what percentage reached A1 on time by arrival cohort, with the denominator visible. The assistant retrieves approved rules and cites the challenge pages. Intake suggestions are reviewed locally. The demo runs with no external model calls.”
+> “This is the answer. 164 contacts, ranked by what a call can still change. Deadlines that can still be met come first. Next come goals that are reached but not yet recorded, because without the record ASD isn’t paid. Missed deadlines come last. Nationality and age play no part in the order.”
 
-## 2:15–3:00 · Scale, forecast and closing
+*Open **DEMO-00001**.*
 
-Open Forecast. Show the historical counts, uncertainty and baseline comparison. Identify the synthetic training series and the separate FSO statistic. Show the 2027 scenario and state that the rate is illustrative.
+> “A1 is due on 16 October, in 16 days. The next step is right at the top: register for a fide or telc exam. Below it, every result shows the Excel rows it came from.”
 
-“Today’s evidence is a working monthly Excel-to-Excel workflow. The next decision for ASD is confirming its rule interpretations and supplying approved historical aggregates. The software already shows data lineage and highlights uncertainty when evidence is missing.”
+*Switch to the October snapshot in **Daten & Berichte** and reopen the case.*
+
+> “One month later, the same eleven files come in again. A fide certificate dated 12 October has arrived, four days before the deadline, so the light turns green. But the official goal table doesn’t have it yet, so the cockpit says: record it, or the payment is lost.”
+
+## 1:15–1:55 · Management
+
+*Show **Übersicht**, the target and actual table.*
+
+> “Level 1: per caseworker and per entry year, how many deadlines have passed and how many were met on time. These are exactly the totals in the Excel export.”
+
+*Scroll to the group analysis and choose **Sprachkurs**.*
+
+> “Level 2: what do people who make it have in common? In our demo data, people who start a language course within six months reach A1 on time in 73 % of cases. Those who start later reach it in 28 %. The uncertainty ranges don’t overlap. We say it plainly on screen: that is an association, not a proven cause. Groups smaller than eight are hidden, so nobody can be identified.”
+
+*Switch **Demo-Rolle** to **Leitung**.*
+
+> “Management sees totals only. The server enforces this, not just the screen.”
+
+## 1:55–2:30 · Planning
+
+*Switch back to **Demo-Konto** and open **Planung**.*
+
+> “Payments: 103 goals are already reached but cannot be claimed yet, because the official record is missing. One click opens exactly those cases. The 2027 rule shortens responsibility from seven to five years: 544 people would leave earlier, and 25 goals would be overdue at once. Finally, ZEMIS shows 27 jobs that don’t match our records.”
+
+## 2:30–3:00 · Trust and next step
+
+*Open **Datenschutz** for two seconds, then click **Excel herunterladen**.*
+
+> “All of this runs on one ASD computer. There is no cloud and no AI service, and the browser is technically blocked from loading anything external. The Excel goes straight back into today’s workflow, with Swiss dates and colour-coded results. Every button has a small ‘!’ that explains itself, in German, French and English.
+>
+> Next step: ASD confirms our reading of the rules, and we run one real month together, on ASD’s machine.”
+
+---
+
+## If the jury asks
+
+- *Is the data real?* No. About 1,400 invented people. The patterns were planted on purpose and are listed in `docs/SOURCES.md`. Real data will give different numbers.
+- *Is there AI in it?* The rules assistant retrieves approved, cited rule texts, and the forecast is validated on held-back months. No language model sees personal data.
+- *What if a file is missing or broken?* The import is rejected, the last valid month stays, and a quality workbook names the file, row and reason.
+- *Can ASD change a rule?* A1 and the responsibility periods are JSON policy files, so changing them needs no new code.
