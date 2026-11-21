@@ -8,7 +8,7 @@
 
 **Live demo** · https://listening-brian-served-upcoming.trycloudflare.com/login
 
-**Video** · https://github.com/hmnhoomandev/Integration-Cockpit/releases/download/v0.1.0-hackathon/integration-cockpit-demo.mp4
+**Video** · https://github.com/hmnhoomandev/Integration-Cockpit/releases/download/v1.0.0/integration-cockpit-demo-v1.0.0.mp4
 
 **Short description**
 

@@ -6,7 +6,9 @@ A prototype for the City of Bern’s asylum social service at the AI for Access 
 
 ## Demonstration
 
-[Temporary HTTPS sign-in](https://listening-brian-served-upcoming.trycloudflare.com/login). It serves an isolated synthetic-only profile and depends on the demo laptop and tunnel staying online. The team distributes the username and password privately. [Narrated demo and sample artifacts](https://github.com/hmnhoomandev/Integration-Cockpit/releases/tag/v0.1.0-hackathon).
+[Version 1.0.0 acceptance and remaining deployment dependencies](docs/PHASE-10.md).
+
+[Temporary HTTPS sign-in](https://listening-brian-served-upcoming.trycloudflare.com/login). It serves an isolated synthetic-only profile and depends on the demo laptop and tunnel staying online. The team distributes the username and password privately. [Narrated demo and sample artifacts](https://github.com/hmnhoomandev/Integration-Cockpit/releases/tag/v1.0.0).
 
 1. Sign in and try the German, English and French interface.
 2. In **Data & reports**, re-import September 2026. Open case **DEMO-00001**. A1 is due on 16 October and needs follow-up.
@@ -27,7 +29,8 @@ Open http://127.0.0.1:8000. On a fresh database the command prints a randomly ge
 python3 -m cockpit.server fixtures
 python3 -m cockpit.server import 2026-10-31 runtime/fixtures/2026-10-31/*.xlsx
 python3 -m unittest discover -s tests -v
-python3 -m cockpit.benchmark 1000 10000 40000
+python3 -m cockpit.benchmark 125000
+python3 -m cockpit.reliability --workers 8 --rounds 3 --people 1000
 ```
 
 ## What the prototype covers
@@ -40,7 +43,7 @@ python3 -m cockpit.benchmark 1000 10000 40000
 | 4. Cockpit | Worker-scoped queue, case evidence and timelines, aggregate management UI, import and quality workspace |
 | Extensions | 2027 cutoff comparison, illustrative CHF sensitivity, date-overlap ZEMIS discrepancies and caseload by assignment |
 
-The **Rules assistant** uses approved, localized excerpts indexed by fixed topic and cites the original challenge by page. The **aggregate assistant** answers a fixed cohort question using suppressed aggregate measures. **Intake review** extracts and links a report locally by ZEMIS and asks a human to confirm classifications. These workflows use retrieval and deterministic logic. No language model or hosted inference ran during verification.
+The **Rules assistant** uses approved, localized excerpts indexed by fixed topic and cites the original challenge by page. The **aggregate assistant** answers approved cohort and monthly-change questions using suppressed aggregate measures. **Intake review** extracts and links a report locally by ZEMIS and asks a human to confirm classifications. These workflows use retrieval and deterministic logic. No language model or hosted inference ran during verification.
 
 The **forecast** uses a separate, reproducible 48-month synthetic planning series. It evaluates naive, seasonal-naive and trend models in time order, applies a baseline fallback gate, and measures MAE and interval coverage on 12 untouched months. Local judge and manager accounts can replace the series with a consecutive aggregate CSV and remove it to restore the synthetic series. The public FSO benchmark is displayed separately with its different denominator. Forecasts are aggregate and illustrative.
 

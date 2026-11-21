@@ -8,7 +8,7 @@ A managed container was not launched in the supplied Google Cloud projects. Clou
 
 ## Rehearsal and offline fallback
 
-Download the [offline demo bundle](https://github.com/hmnhoomandev/Integration-Cockpit/releases/download/v0.1.0-hackathon/integration-cockpit-offline.zip), extract it, and run `python3 -m cockpit.server serve --demo` from its project directory. Python 3.12 or later is required. Open http://127.0.0.1:8000 and use the newly generated local credential printed on first start. The bundle contains source, the narrated video, captions, a sample results workbook, and all 22 generated source workbooks. The app generates its own synthetic snapshots on first start. Keep the narrated video open separately for fallback playback.
+Download the [offline demo bundle](https://github.com/hmnhoomandev/Integration-Cockpit/releases/download/v1.0.0/integration-cockpit-offline-v1.0.0.zip), extract it, and run `python3 -m cockpit.server serve --demo` from its project directory. Python 3.12 or later is required. Open http://127.0.0.1:8000 and use the newly generated local credential printed on first start. The bundle contains source, the narrated video, captions, a sample results workbook, and all 22 generated source workbooks. The app generates its own synthetic snapshots on first start. Keep the narrated video open separately for fallback playback.
 
 To rehearse the published link from another device, run the deployment smoke test from the source directory. It prompts for the password without echoing it, uses its own sign-in session, replays both synthetic months, verifies the exported A1 evidence, and signs out.
 
