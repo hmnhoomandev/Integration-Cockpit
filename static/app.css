@@ -336,12 +336,13 @@ body.signin { background: radial-gradient(1200px 600px at 85% -10%, #f9d54826, t
 .panel > form + form, .panel > form + .tablewrap, .panel > .tablewrap + form { margin-top: .9rem; }
 
 /* ── Help "!" buttons (details/summary, no script) ── */
-.tip { position: relative; display: inline-block; vertical-align: middle; margin: 0; flex: none; }
-.tip > summary { list-style: none; display: grid; place-items: center; width: 1.35rem; height: 1.35rem; border-radius: 50%; cursor: pointer;
-  background: var(--gold); color: var(--bear); font-size: .78rem; font-weight: 900; line-height: 1; box-shadow: 0 0 0 2px #fff, 0 1px 3px #0003; transition: transform .12s; }
+.tip { position: relative; display: inline-block; vertical-align: super; margin: 0 0 0 -.1rem; flex: none; line-height: 0; }
+.tip > summary { list-style: none; display: grid; place-items: center; width: .95rem; height: .95rem; border-radius: 50%; cursor: pointer;
+  background: transparent; color: var(--muted); border: 1px solid currentColor; font: italic 700 .6rem/1 Georgia, "Times New Roman", serif;
+  opacity: .45; transition: opacity .15s, background .15s, color .15s; }
 .tip > summary::-webkit-details-marker { display: none; }
-.tip > summary:hover { transform: scale(1.1); }
-.tip[open] > summary { background: var(--bear); color: var(--gold); }
+.tip > summary:hover, .tip > summary:focus-visible { opacity: 1; }
+.tip[open] > summary { opacity: 1; background: var(--bear); border-color: var(--bear); color: #fff; }
 .tip-body { position: absolute; z-index: 40; top: calc(100% + .55rem); left: 50%; transform: translateX(-50%); width: min(290px, 78vw);
   padding: .75rem .85rem; border-radius: 12px; background: var(--bear); color: #f6efe9; font-size: .8rem; font-weight: 500; line-height: 1.5;
   text-align: left; text-transform: none; letter-spacing: 0; box-shadow: var(--shadow-lift); white-space: normal; }
@@ -351,8 +352,8 @@ header .tip-body { left: auto; right: -1rem; transform: none; }
 header .tip-body::before { left: auto; right: 1.3rem; }
 .nav-row { display: flex; align-items: center; gap: .35rem; }
 .nav-row > a { flex: 1; min-width: 0; }
-aside .tip > summary { width: 1.15rem; height: 1.15rem; font-size: .68rem; box-shadow: none; opacity: .75; }
-aside .tip > summary:hover, aside .tip[open] > summary { opacity: 1; }
+aside .tip > summary { color: #fff; opacity: .3; }
+aside .tip > summary:hover, aside .tip[open] > summary { opacity: .9; background: transparent; border-color: #fff; color: #fff; }
 aside .tip-body { left: auto; right: 0; transform: none; width: 210px; background: #fff; color: var(--ink); }
 aside .tip-body::before { left: auto; right: .35rem; transform: rotate(45deg); background: #fff; }
 .section-head { display: flex; align-items: center; gap: .6rem; margin-bottom: .2rem; }

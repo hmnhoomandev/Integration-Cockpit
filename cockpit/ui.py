@@ -815,7 +815,7 @@ def say(lang,key,**values):
 
 def tip(lang,key):
     # A click-to-open explanation without JavaScript (the CSP allows no scripts).
-    return (f'<details class="tip"><summary aria-label="{text(lang,"help_label")}" title="{text(lang,"help_label")}">!</summary>'
+    return (f'<details class="tip"><summary aria-label="{text(lang,"help_label")}" title="{text(lang,"help_label")}">i</summary>'
             f'<span class="tip-body" role="note">{text(lang,key)}</span></details>')
 
 
