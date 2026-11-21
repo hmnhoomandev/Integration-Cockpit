@@ -117,7 +117,11 @@ def goal3(household, members, assistance, end, asof, synthetic):
         return result('review','coverage_unknown',end)
     cut = min(end,asof)
     first = min(as_date(r['Dossierperson Von']) for r in members)
-    support = intervals(assistance,'Finanzielle Unterstützung Gültig von','Finanzielle Unterstützung Gültig bis',first,cut)
+    support_types = {'Sozialhilfe','Nothilfe','Keine Unterstützung'}
+    if any(r.get('Unterstützung') not in support_types for r in assistance):
+        return result('review','coverage_unknown',end)
+    support = intervals([r for r in assistance if r['Unterstützung']!='Keine Unterstützung'],
+                        'Finanzielle Unterstützung Gültig von','Finanzielle Unterstützung Gültig bis',first,cut)
     ev = [('membership',r['_line']) for r in members]
     cursor = first
     for a,b,lines in support:

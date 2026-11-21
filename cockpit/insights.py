@@ -24,6 +24,10 @@ SOURCES = {
         ('Der Berner Challenge-Bericht nennt zwölf Monate ohne Sozialhilfe für den gesamten Haushalt vor Zuständigkeitsende. Die Demo verwendet die Dossier-Nr.',
          'The Bern challenge specifies twelve months without social assistance for the entire household before responsibility ends. The demo links via the case-file number.',
          'Le défi bernois prévoit douze mois sans aide sociale pour tout le ménage avant la fin de la prise en charge. La démo utilise le numéro de dossier.')),
+    'scenario2027': (BERN,'Asylsozialdienst Stadt Bern','ASD challenge, pp. 1–2 (November 2026)',
+        ('Die Challenge nennt für VA und F-FL sieben Jahre ab Einreise und fünf Jahre ab 1. Januar 2027. Die betroffenen Übergangskohorten sind zu bestätigen.',
+         'The challenge states seven years from entry for VA and F-FL, then five years from 1 January 2027. Transitional cohorts require confirmation.',
+         'Le défi indique sept ans après l’arrivée pour les AP et les réfugiés admis provisoirement, puis cinq ans dès le 1er janvier 2027. Les cohortes transitoires restent à confirmer.')),
 }
 
 @dataclass(frozen=True)

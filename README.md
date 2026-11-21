@@ -54,7 +54,7 @@ Authorized local PDF                       → local extraction → human confir
 Aggregate month/count series               → rolling backtest → default or baseline estimate
 ```
 
-The current prototype uses SQLite and Python’s standard-library HTTP server; the [container recipe](Dockerfile) runs the synthetic-only profile. Store the hosted database outside the image, provision an account out of band with the CLI, and terminate TLS at the approved reverse proxy. Keep hosted startup and credentials separate from local datasets. [Deployment details](docs/DEPLOYMENT.md) · [Security](SECURITY.md)
+The current prototype uses SQLite and Python’s standard-library HTTP server; the [container recipe](Dockerfile) runs the synthetic-only profile. Store the hosted database outside the image, provision an account out of band with the CLI, and terminate TLS at the approved reverse proxy. Keep hosted startup and credentials separate from local datasets. [Deployment details](docs/DEPLOYMENT.md) · [Production acceptance and recovery](docs/PRODUCTION.md) · [Security](SECURITY.md)
 
 ## Verification and remaining work
 

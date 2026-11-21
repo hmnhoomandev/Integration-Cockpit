@@ -126,6 +126,15 @@ class RulesTests(TestCase):
         rows['language'].append(base|{'Sprache':'Deutsch'})
         self.assertEqual(rules.goal1({},date(2024,1,1),today,rows)['state'],'review')
 
+    def test_no_assistance_flag_and_unrecognized_support_type(self):
+        cutoff = date(2026,10,31)
+        members = [{'Dossierperson Von':'2024-08-01','_line':2}]
+        support = {'Finanzielle Unterstützung Gültig von':'2025-06-01','_line':2}
+        absent = rules.goal3('fixture',members,[support|{'Unterstützung':'Keine Unterstützung'}],cutoff,cutoff,True)
+        self.assertEqual(absent['achieved'],date(2025,8,1))
+        unknown = rules.goal3('fixture',members,[support|{'Unterstützung':'other'}],cutoff,cutoff,True)
+        self.assertEqual(unknown['state'],'review')
+
     def test_literal_excel_cells(self):
         book = xlsx.write({'test':[['Code'],['=HYPERLINK("secret")'],['0004']]})
         self.assertEqual([row[1][0] for row in xlsx.read(book)],['Code','=HYPERLINK("secret")','0004'])
