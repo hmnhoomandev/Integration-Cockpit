@@ -29,6 +29,22 @@ VERSION = '2026.11-demo.2+'+sha256(json.dumps(A1_POLICY,sort_keys=True).encode()
 ELIGIBLE = {'VA','F-FL','B-FL','B-RSFL','B-SL'}
 OUT = {'N','N (Asylsuchende)','S'}
 LEVELS = {'A1','A2','B1','B2','C1','C2'}
+def load_responsibility_policy(path):
+    policy = json.loads(Path(path).read_text())
+    for key in ('refugee_application_months','temporary_admission_entry_months','transition_entry_months'):
+        if type(policy[key]) is not int or not 1<=policy[key]<=240:
+            raise ValueError('Invalid responsibility policy duration')
+    date.fromisoformat(policy['transition_effective_date'])
+    if policy['transition_cohort'] not in ('all_va_f_fl','entry_on_or_after_effective_date') or not str(policy['version']).strip():
+        raise ValueError('Invalid responsibility policy')
+    return policy
+
+
+RESPONSIBILITY_POLICY = load_responsibility_policy(os.getenv('COCKPIT_RESPONSIBILITY_POLICY') or
+                                                   Path(__file__).with_name('responsibility-policy.json'))
+WORK_GOAL = 'Aufnahme Ausbildung / Erwerbstätigkeit'
+HOUSEHOLD_GOAL = 'Finanzielle Unabhängigkeit'
+APPLICATION_EVENTS = {'Asylgesuch in CH (Bund direkt, Kat. I)','Asylgesuch in CH (Kt normal, Kat. III)'}
 MIN_GROUP = 8
 DAY = timedelta(days=1)
 
@@ -116,11 +132,19 @@ def goal2(tables, asof, start, end, synthetic=False):
     if not end:
         return result('review','missing_end')
     cutoff = min(end,asof)
-    potential_jobs = [r for r in tables['work'] if isinstance(r.get('Pensum %'),(int,float))
-                      and r['Pensum %']>=60 and r.get('Von') and r['Von']<=cutoff.isoformat()
-                      and (not r.get('Bis') or r['Bis']>=start.isoformat())]
-    jobs = [r for r in potential_jobs if r.get('Erwerbsstatus')=='1. Arbeitsmarkt'
-            or (synthetic and r.get('Bemerkungen')=='Demo: 1. Arbeitsmarkt')]
+    candidates = [r for r in tables['work'] if (not r.get('Von') or r['Von']<=cutoff.isoformat())
+                  and (not r.get('Bis') or r['Bis']>=start.isoformat())]
+    jobs, unresolved = [], []
+    for row in candidates:
+        percent = row.get('Pensum %')
+        if not isinstance(percent,(int,float)) or not 0<=percent<=100:
+            unresolved.append(row)
+        elif percent>=60:
+            if row.get('Von') and (row.get('Erwerbsstatus')=='1. Arbeitsmarkt'
+                                   or synthetic and row.get('Bemerkungen')=='Demo: 1. Arbeitsmarkt'):
+                jobs.append(row)
+            else:
+                unresolved.append(row)
     spans = intervals(jobs,'Von','Bis',start,cutoff)
     paths = []
     earliest = None
@@ -137,31 +161,73 @@ def goal2(tables, asof, start, end, synthetic=False):
     if paths:
         d,reason,ev = min(paths)
         return judgement(asof,end,d,ev,reason)
-    if len(jobs)<len(potential_jobs):
-        return result('review','market_unknown',end,evidence=[('work',r['_line']) for r in potential_jobs if r not in jobs])
-    return judgement(asof,end,None,[],'check_continuity',earliest)
+    if unresolved:
+        return result('review','market_unknown',end,evidence=[('work',r['_line']) for r in unresolved])
+    undated_education = [r for r in tables['education'] if r.get('Art') in ('Sek II','Tertiär') and not r.get('Start')]
+    if undated_education:
+        return result('review','education_unknown',end,evidence=[('education',r['_line']) for r in undated_education])
+    evidence = [('work',line) for _,_,lines in spans for line in lines]
+    reason = 'employment_gap' if len(spans)>1 else 'check_continuity'
+    return judgement(asof,end,None,evidence,reason,earliest)
 
 
 def goal3(household, members, assistance, end, asof, synthetic):
-    if not synthetic or not end or not members or any(not r.get('Dossierperson Von') for r in members):
+    if not end:
+        return result('review','household_end_unknown')
+    if not synthetic or not members or any(not r.get('Dossierperson Von') for r in members):
         return result('review','coverage_unknown',end)
     cut = min(end,asof)
-    first = min(as_date(r['Dossierperson Von']) for r in members)
+    periods = [(as_date(r['Dossierperson Von']),as_date(r.get('Dossierperson Bis')),r['_line']) for r in members]
+    if not any(a<=cut and (b is None or cut<=b) for a,b,_ in periods):
+        return result('review','membership_unknown',end)
+    # Conservative demo rule: start again at the most recent observed change in composition.
+    starts = {a for a,_,_ in periods if a<=cut}
+    departures = {b+DAY for _,b,_ in periods if b is not None and b<cut}
+    first = max(starts|departures)
+    changed = len(starts)>1 or bool(departures)
+    evidence = [('membership',line) for a,b,line in periods if a<=cut]
     support_types = {'Sozialhilfe','Nothilfe','Keine Unterstützung'}
-    if any(r.get('Unterstützung') not in support_types for r in assistance):
-        return result('review','coverage_unknown',end)
+    uncertain = [r for r in assistance if r.get('Unterstützung') not in support_types or
+                 (r['Unterstützung']!='Keine Unterstützung' and not r.get('Finanzielle Unterstützung Gültig von'))]
+    if uncertain:
+        return result('review','coverage_unknown',end,evidence=evidence+[('support',r['_line']) for r in uncertain])
     support = intervals([r for r in assistance if r['Unterstützung']!='Keine Unterstützung'],
                         'Finanzielle Unterstützung Gültig von','Finanzielle Unterstützung Gültig bis',first,cut)
-    ev = [('membership',r['_line']) for r in members]
     cursor = first
+    attained = None
     for a,b,lines in support:
-        ev.extend(('support',line) for line in lines)
+        evidence.extend(('support',line) for line in lines)
         if months(cursor,12)<a:
-            return judgement(asof,end,months(cursor,12),ev,'support_free')
+            attained = months(cursor,12)
+            break
         cursor = max(cursor,b+DAY)
     candidate = months(cursor,12)
-    return judgement(asof,end,candidate if candidate<=cut else None,ev,'support_free' if candidate<=cut else 'support_check',
-                     candidate if cut<candidate<=end else None)
+    attained = attained or (candidate if candidate<=cut else None)
+    reason = 'support_free' if attained else 'membership_reset' if changed and cursor==first else 'support_check'
+    return judgement(asof,end,attained,evidence,reason,candidate if cut<candidate<=end else None) | {'period_start':cursor}
+
+
+def recorded(goal, rows, name, asof):
+    matches = [(as_date(r.get('Erreicht am')),r['_line']) for r in rows
+               if r.get('Art')==name and (not r.get('Erreicht am') or r['Erreicht am']<=asof.isoformat())]
+    return goal | {'official_dates':sorted({d for d,_ in matches if d}),
+                   'official_undated':any(d is None for d,_ in matches),
+                   'evidence':goal['evidence']+[('official',line) for _,line in matches]}
+
+
+def reference_ends(status, entry, events):
+    policy = RESPONSIBILITY_POLICY
+    if status in {'B-FL','B-RSFL','B-SL'}:
+        applications = {as_date(r.get('Ereignisdatum')) for r in events if r.get('Asylgeschäftsart') in APPLICATION_EVENTS}
+        application = next(iter(applications)) if len(applications)==1 else None
+        return (months(application,policy['refugee_application_months']) if application else None,None)
+    if status in {'VA','F-FL'} and entry:
+        transition = policy['transition_cohort']
+        candidate = (transition=='all_va_f_fl' or
+                     transition=='entry_on_or_after_effective_date' and entry>=as_date(policy['transition_effective_date']))
+        return (months(entry,policy['temporary_admission_entry_months']),
+                months(entry,policy['transition_entry_months']) if candidate else None)
+    return None,None
 
 
 def age_on(born, when):
@@ -228,6 +294,9 @@ def evaluate(snapshot, rows):
             cutoff = as_date(next(iter(ends[home]))) if len(ends[home])==1 else None
             houses[home] = goal3(home,family['membership'],family['support'],cutoff,now,snapshot['source']=='synthetic')
         financial = houses[home] if employment['state']!='na' else result('na','outside_scope')
+        employment = recorded(employment,tables['official'],WORK_GOAL,now) if employment['state']!='na' else employment
+        financial = recorded(financial,tables['official'],HOUSEHOLD_GOAL,now) if financial['state']!='na' else financial
+        reference_end, transition_end = reference_ends(status,entry,tables['events'])
         gaps = []
         for z in tables['zemis']:
             a = z.get('Arbeitsbeginn')
@@ -235,7 +304,8 @@ def evaluate(snapshot, rows):
             if a and a<=snapshot['asof'] and not any(w.get('Von') and w['Von']<=b and (w.get('Bis') or '9999')>=a for w in tables['work']):
                 gaps.append(z['_line'])
         cases.append(dict(id=pid,worker=person.get('Fallführung') or '–',home=home,entry=entry,age=age,
-            status=status,school_years=person.get('Schuljahre vor Einreise'),goals=(language,employment,financial),tables=tables,gaps=gaps,end=end))
+            status=status,school_years=person.get('Schuljahre vor Einreise'),goals=(language,employment,financial),tables=tables,gaps=gaps,end=end,
+            reference_end=reference_end,transition_end=transition_end))
     return cases
 
 

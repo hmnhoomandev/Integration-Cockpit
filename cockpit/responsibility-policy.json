@@ -1,0 +1,8 @@
+{
+  "version": "2026.11-reference.1",
+  "refugee_application_months": 60,
+  "temporary_admission_entry_months": 84,
+  "transition_effective_date": "2027-01-01",
+  "transition_entry_months": 60,
+  "transition_cohort": "all_va_f_fl"
+}

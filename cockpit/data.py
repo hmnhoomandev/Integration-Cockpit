@@ -27,6 +27,8 @@ PAIR = {'status': DATES['status'], 'membership': DATES['membership'], 'work': DA
         'education': DATES['education'], 'housing': DATES['housing'], 'zemis': DATES['zemis'],
         'clients': DATES['clients'][:2]}
 MONTHS = ('2026-09-30','2026-10-31')
+PHASE4_MONTH = '2026-08-31'
+
 
 
 def norm(value):
@@ -35,6 +37,7 @@ def norm(value):
 
 def seed(asof, size=144):
     rows = defaultdict(list)
+    phase4 = asof==PHASE4_MONTH
     def add(key, values):
         rows[key].append([values.get(header) for header in SCHEMA[key]['headers']])
     for i in range(size):
@@ -54,7 +57,8 @@ def seed(asof, size=144):
         add('events',ids | {'Asylgeschäftsart':'Aufenthalt (Einreise)','Ereignisdatum':entry})
         add('events',ids | {'Asylgeschäftsart':'Asylgesuch in CH (Kt normal, Kat. III)','Ereignisdatum':entry + timedelta(days=2)})
         add('status',ids | {'Verfahrensstand Gültig ab':entry,'Verfahrensstand':status})
-        add('membership',ids | {'Dossierperson Von':entry,'Rolle':'Familienmitglied'})
+        member_start = date(2026,6,1) if phase4 and i==1 else entry
+        add('membership',ids | {'Dossierperson Von':member_start,'Rolle':'Familienmitglied'})
         add('housing',ids | {'Unterbringung Von':entry,'Unterbringung Art':'Wohnung','PLZ':'3000','Ort':'Bern'})
         if i%4 != 3:
             proof = date(2026,10,12) if i == 0 else entry + timedelta(days=200+i*11)
@@ -63,7 +67,11 @@ def seed(asof, size=144):
                      'Art':'Zertifizierung','Bemerkungen':'fide','Datum Erreichung':proof})
                 if i%7:
                     add('official',ids | {'Art':'Sprachniveau A1','Erreicht am':proof,'Jahr Grundgesamtheit':entry.year,'Ziel mit Status S erreicht':'Nein'})
-        if i%3:
+        if phase4 and i==1:
+            for begin, finish in ((date(2026,1,1),date(2026,3,31)),(date(2026,4,2),None)):
+                add('work',ids | {'Von':begin,'Bis':finish,'Pensum %':80,'Erwerbsstatus':'unselbstständig',
+                                  'Bemerkungen':'Demo: 1. Arbeitsmarkt'})
+        elif i%3:
             job = max(entry,date(2025,3+i%8,1))
             add('work',ids | {'Von':job,'Pensum %':80 if i%5 else 50,'Arbeitgeber Name':'Demo Betrieb','Erwerbsstatus':'unselbstständig','Bemerkungen':'Demo: 1. Arbeitsmarkt'})
         if i%3 or i%11 == 0:
@@ -72,7 +80,7 @@ def seed(asof, size=144):
             add('education',ids | {'Start':max(entry,date(2025,8,1)),'Art':'Sek II' if i%4==0 else 'Förderangebot Sprache',
                                    'Institution Name':'Demo Lernzentrum','Stunden pro Woche':8})
         if i%2 == 0:
-            add('support',ids | {'Unterstützung':'Sozialhilfe','Finanzielle Unterstützung Gültig von':date(2022,1,1),
+            add('support',ids | {'Unterstützung':None if phase4 and i==2 else 'Sozialhilfe','Finanzielle Unterstützung Gültig von':date(2022,1,1),
                 'Finanzielle Unterstützung Gültig bis':date(2025,8,15) if i%4==0 else None})
     return {key:xlsx.write({key:[spec['headers'],*rows[key]]}) for key,spec in SCHEMA.items()}
 

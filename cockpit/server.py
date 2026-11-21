@@ -322,7 +322,7 @@ class Handler(BaseHTTPRequestHandler):
     def import_snapshot(self,db,route,token,fields,files):
         report = fields.get('date','')
         if route in ('seed','seed-invalid'):
-            if report not in data.MONTHS:
+            if report not in (*data.MONTHS,data.PHASE4_MONTH):
                 raise ValueError('invalid_month')
             books = data.seed(report)
             if route=='seed-invalid':

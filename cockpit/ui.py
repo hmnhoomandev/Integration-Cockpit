@@ -4,7 +4,7 @@ from urllib.parse import urlencode, quote
 from itertools import chain
 
 from . import rules
-from .data import MONTHS
+from .data import MONTHS, PHASE4_MONTH
 from .insights import SOURCES, FSO
 
 LOCALES = ('de-CH','en','fr-CH')
@@ -104,6 +104,16 @@ COPY = {
  'language_policy':('Nachweissprache','Proof language','Langue du justificatif'),
  'age_reference':('Altersstichtag','Age reference','Date de référence pour l’âge'),
  'minimum_age':('Mindestalter','Minimum age','Âge minimum'),
+ 'employment_gap':('Beschäftigung unterbrochen','Employment intervals interrupted','Périodes d’emploi interrompues'),
+ 'education_unknown':('Ausbildungsbeginn ungeklärt','Education start unconfirmed','Début de formation non confirmé'),
+ 'household_end_unknown':('Haushaltsfrist fehlt oder widerspricht sich','Household cutoff missing or conflicting','Échéance du ménage manquante ou contradictoire'),
+ 'membership_unknown':('Kein bestätigter Haushaltsbestand am Stichtag','No confirmed household membership at cutoff','Composition du ménage non confirmée à la date de référence'),
+ 'membership_reset':('Zeitraum beginnt nach Änderung des Haushalts neu','Interval restarts after household membership changes','La période recommence après un changement de composition'),
+ 'period_start':('Beginn des geprüften Zeitraums','Start of evaluated interval','Début de la période examinée'),
+ 'baseline_end':('Exportiertes Zuständigkeitsende','Exported responsibility end','Fin de prise en charge exportée'),
+ 'reference_end':('Rechnerische Referenzfrist','Calculated reference cutoff','Échéance de référence calculée'),
+ 'transition_end':('Kandidatenfrist 2027','Candidate 2027 cutoff','Échéance envisagée pour 2027'),
+ 'phase4_fixture':('Testmonat für Arbeit und Haushalt','Work and household test month','Mois de test travail et ménage'),
  'missing_source':('Pflichtdatei fehlt','Required workbook is missing','Classeur obligatoire manquant'),
  'unrecognized_or_invalid_workbook':('Datei ungültig oder doppelt','Invalid or duplicate workbook','Classeur invalide ou en double'),
  'invalid_worksheet_data':('Ungültige Tabelleninhalte','Invalid worksheet content','Contenu de feuille invalide'),
@@ -289,14 +299,20 @@ def detail(lang,case):
     for key,g in zip(('a1','work','household'),case['goals']):
         ev = ', '.join(f'{esc(k)} #{line}' for k,line in g['evidence']) or '—'
         rows = [(tr(lang,'deadline'),g['deadline']),(tr(lang,'attained'),g['achieved']),(tr(lang,'scenario'),g['earliest'])]
+        official = ', '.join(map(str,g.get('official_dates',())))
+        if g.get('official_undated'):
+            official = (official+' · ' if official else '')+tr(lang,'undated_proof')
+        rows.append((tr(lang,'official_dates'),official or None))
         if key=='a1':
-            official = ', '.join(map(str,g.get('official_dates',())))
-            if g.get('official_undated'):
-                official = (official+' · ' if official else '')+tr(lang,'undated_proof')
             due_key = {True:'due_now',False:'upcoming_due',None:'due_unknown'}[g.get('due')]
             due = tr(lang,due_key) if g['scope']=='scope_in' else None
             rows.extend([(tr(lang,'scope'),tr(lang,g['scope'])),(tr(lang,'entry_date'),case['entry']),
-                         (tr(lang,'due_status'),due),(tr(lang,'official_dates'),official or None)])
+                         (tr(lang,'due_status'),due)])
+        elif key=='work':
+            rows.extend((tr(lang,label),case[field]) for label,field in (
+                ('baseline_end','end'),('reference_end','reference_end'),('transition_end','transition_end')))
+        else:
+            rows.append((tr(lang,'period_start'),g.get('period_start')))
         facts = ''.join(f'<dt>{esc(k)}</dt><dd>{esc(v)}</dd>' for k,v in rows)
         sections.append(f'<section class="panel"><h2>{text(lang,key)}</h2>{badge(lang,g["state"])}<p>{text(lang,g["reason"])}</p><dl>{facts}<dt>{text(lang,"evidence")}</dt><dd>{ev}</dd></dl></section>')
     timeline = []
@@ -318,7 +334,8 @@ def reports(lang,snapshot,history,role,csrf,hosted,notice='',issues=(),manifest=
     if role in ('judge','importer'):
         button = action(lang,'synthetic_load')
         options = ''.join(f'<option>{d}</option>' for d in MONTHS)
-        import_controls = post('/seed',csrf,f'<label>{text(lang,"snapshot")} <select name="date">{options}</select></label>{button}')
+        exercise = options+f'<option value="{PHASE4_MONTH}">{PHASE4_MONTH} · {text(lang,"phase4_fixture")}</option>'
+        import_controls = post('/seed',csrf,f'<label>{text(lang,"snapshot")} <select name="date">{exercise}</select></label>{button}')
         import_controls += post('/seed-invalid',csrf,
             f'<label>{text(lang,"snapshot")} <select name="date">{options}</select></label>'+action(lang,'invalid_demo'))
         report += f'<a class="button" href="/quality">{text(lang,"quality_export")}</a>'
@@ -377,9 +394,8 @@ def forecast(lang,report,tariff,cases,series=None,can_upload=False,csrf=''):
     top = max(values+[report['hi']])
     bars = ''.join(f'<meter min="0" max="{top}" value="{v}" aria-label="{i+1}: {v}">{v}</meter>'
                    for i,v in enumerate(values[-24:],len(values)-23))
-    from .rules import months
     cohort = [case for case in cases if case['status'] in ('VA','F-FL') and case['entry'] and case['end']]
-    changed = sum(months(c['entry'],60)!=c['end'] for c in cohort)
+    changed = sum(bool(c['transition_end'] and c['transition_end']!=c['end']) for c in cohort)
     met = sum(c['goals'][0]['state']=='achieved' for c in cases)
     checks = table(['Model','MAE'],((esc(k),esc(v)) for k,v in report['mae'].items()))
     status = f'{esc(report["model"])} · {text(lang,"heldout")} {report["heldout"]} · {report["coverage"]:.0%}'
@@ -398,7 +414,7 @@ def forecast(lang,report,tariff,cases,series=None,can_upload=False,csrf=''):
 <p>{series_meta}</p><p class="mono">{raw_values}</p></details></section>
 <section class="panel"><h2>MAE</h2>{checks}</section></div>
 <div class="two"><section class="panel"><h2>{text(lang,'public')}</h2><p>{text(lang,'public_note')}</p><a href="{FSO}">{text(lang,'source')} · BFS / FSO</a></section>
-<section class="panel"><h2>{text(lang,'scenario2027')}</h2><p>VA / F-FL · 60 M · {changed}/{len(cohort)}</p>
+<section class="panel"><h2>{text(lang,'scenario2027')}</h2><p>VA / F-FL · {rules.RESPONSIBILITY_POLICY['transition_entry_months']} M · {changed}/{len(cohort)}</p>
 <form action="/forecast"><label>{text(lang,'tariff')} <input type="number" name="rate" min="0" max="100000" value="{tariff}"></label>{action(lang,'choose')}</form>
 <p>{met} × CHF {tariff:,} = <strong>CHF {met*tariff:,}</strong></p></section></div>{controls}'''
 
@@ -416,6 +432,7 @@ def export(lang,snapshot,cases,role):
     source = tr(lang,'demo' if snapshot['source']=='synthetic' else 'local')
     import json
     tabs = {tr(lang,'data_card'):[[tr(lang,'snapshot'),snapshot['asof']],[tr(lang,'source'),source],[tr(lang,'policy'),rules.VERSION]]}
+    tabs[tr(lang,'data_card')].append([tr(lang,'reference_end'),rules.RESPONSIBILITY_POLICY['version']])
     coverage = [[tr(lang,'source'),tr(lang,'rows')]]+[[key,n] for key,n in json.loads(snapshot['inspected']).items()]
 
     def details(index, selected):
@@ -431,6 +448,13 @@ def export(lang,snapshot,cases,role):
                 row += [case['entry'],tr(lang,g['scope']),tr(lang,due) if g['scope']=='scope_in' else None,
                         dates or None,tr(lang,'undated_proof') if g.get('official_undated') else None,
                         tr(lang,'uncertain_proof') if g.get('proof_uncertain') else None]
+            elif index==1:
+                row += [', '.join(map(str,g.get('official_dates',()))) or None,
+                        tr(lang,'undated_proof') if g.get('official_undated') else None,
+                        case['reference_end'],case['transition_end'],g['earliest']]
+            else:
+                row[6] = ', '.join(f'{dataset}:{line}' for dataset,line in g['evidence'] if dataset!='official')
+                row += [g.get('period_start'),g['earliest']]
             yield row
     for i,key in enumerate(keys):
         selected = {c['home']:c for c in cases if c['goals'][i]['state']!='na'}.values() if i==2 else cases
@@ -442,6 +466,10 @@ def export(lang,snapshot,cases,role):
             headers = ['ID',*[tr(lang,k) for k in ('worker','year','deadline','attained','reason','evidence')],tr(lang,'goals')]
             if i==0:
                 headers.extend(tr(lang,k) for k in ('entry_date','scope','due_status','official_dates','undated_proof','uncertain_proof'))
+            elif i==1:
+                headers.extend(tr(lang,k) for k in ('official_dates','undated_proof','reference_end','transition_end','scenario'))
+            else:
+                headers.extend(tr(lang,k) for k in ('period_start','scenario'))
             tabs[f'{i+1} · {tr(lang,"evidence")}'] = chain([headers],details(i,selected))
     if role!='manager':
         for field, label in (('worker','worker'),('entry','year')):

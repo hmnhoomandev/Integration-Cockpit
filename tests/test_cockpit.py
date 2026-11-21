@@ -97,6 +97,28 @@ class SnapshotTests(TestCase):
                 rows = tabs[ui.tr(lang,key)][1:]
                 self.assertEqual([sum(col) for col in zip(*(row[1:] for row in rows))],total)
 
+    def test_phase4_work_and_household_fixture(self):
+        month = data.PHASE4_MONTH
+        db = data.connect(':memory:')
+        try:
+            index,_ = data.load_files(db,data.seed(month).values(),month,'synthetic')
+            snapshot, rows = data.get_snapshot(db,index)
+            cases = rules.evaluate(snapshot,rows)
+        finally:
+            db.close()
+        education, gap, unknown = cases[:3]
+        self.assertEqual(education['goals'][1]['reason'],'education')
+        self.assertEqual(gap['goals'][1]['reason'],'employment_gap')
+        self.assertEqual(gap['goals'][1]['earliest'],date(2026,10,2))
+        self.assertEqual(len(gap['goals'][1]['evidence']),2)
+        self.assertEqual(gap['goals'][2]['reason'],'membership_reset')
+        self.assertEqual(gap['goals'][2]['period_start'],date(2026,6,1))
+        self.assertEqual(education['goals'][2],gap['goals'][2])
+        self.assertEqual(unknown['goals'][2]['reason'],'coverage_unknown')
+        self.assertEqual(education['reference_end'],date(2030,10,16))
+        self.assertEqual(education['transition_end'],date(2028,10,16))
+        self.assertEqual(education['goals'][1]['deadline'],date(2028,6,30))
+
     def test_local_import_household_coverage_conservative(self):
         with TemporaryDirectory() as directory:
             db=data.connect(Path(directory)/'data.sqlite')
@@ -171,6 +193,15 @@ class RulesTests(TestCase):
         self.assertEqual(rules.a1_scope('VA',date(2010,10,17),*args),'scope_out')
         self.assertEqual(rules.a1_scope('VA+7',date(2010,10,16),*args),'scope_review')
         self.assertEqual(rules.a1_scope('S',date(2010,10,16),*args),'scope_out')
+
+    def test_household_departure_restarts_period_and_missing_cutoff_is_review(self):
+        now, end = date(2026,8,31),date(2028,8,31)
+        members = [{'Dossierperson Von':'2024-01-01','_line':2},
+                   {'Dossierperson Von':'2024-01-01','Dossierperson Bis':'2026-06-30','_line':3}]
+        goal = rules.goal3('demo',members,[],end,now,True)
+        self.assertEqual((goal['period_start'],goal['earliest']),(date(2026,7,1),date(2027,7,1)))
+        self.assertEqual(rules.goal3('demo',members,[],None,now,True)['reason'],'household_end_unknown')
+        self.assertEqual(rules.goal3('demo',members,[],end,now,False)['state'],'review')
 
     def test_literal_excel_cells(self):
         book = xlsx.write({'test':[['Code'],['=HYPERLINK("secret")'],['0004']]})
