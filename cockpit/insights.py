@@ -76,18 +76,19 @@ def linear(values):
 def backtest(values=None):
     if values is None:
         values = observations()
-    if len(values)<30 or any(type(x) is not int or x<0 for x in values):
+    if len(values)<42 or any(type(x) is not int or x<0 for x in values):
         return {'mode':'insufficient'}
     candidates = {'last': lambda v:v[-1],'seasonal':lambda v:v[-12],'trend':linear}
     split = len(values)-12
-    validation = range(18,split)
+    validation = range(18,split-6)
+    gate = range(split-6,split)
     evaluation = range(split,len(values))
     def residuals(name, window):
         return [abs(values[i]-candidates[name](values[:i])) for i in window]
     winner = min(candidates,key=lambda name:mean(residuals(name,validation)))
     scores = {name:round(mean(residuals(name,evaluation)),2) for name in candidates}
     baseline = min(('last','seasonal'),key=lambda name:mean(residuals(name,validation)))
-    if scores[winner]>=scores[baseline]:
+    if mean(residuals(winner,gate))>=mean(residuals(baseline,gate)):
         winner = baseline
     errors = sorted(residuals(winner,validation))
     width = errors[min(len(errors)-1, ceil((len(errors)+1)*.9)-1)]
@@ -95,3 +96,29 @@ def backtest(values=None):
     return {'model':winner,'est':estimate,'lo':max(0,round(estimate-width)), 'hi':round(estimate+width),
             'mae':scores,'heldout':len(evaluation),'coverage':round(mean(e<=width for e in residuals(winner,evaluation)),2),
             'horizon':1,'values':values}
+
+
+def read_aggregate_series(blob):
+    """Import a consecutive month/count series with no row-level fields."""
+    from csv import reader
+    from io import StringIO
+    from datetime import date
+    from .rules import months
+    if len(blob)>32768:
+        raise ValueError('series_size')
+    rows = reader(StringIO(blob.decode('utf-8-sig')))
+    if next(rows,None)!=['month','count']:
+        raise ValueError('series_header')
+    result = []
+    previous = None
+    for row in rows:
+        if len(row)!=2 or len(row[0])!=7 or len(row[1])>8 or not row[1].isascii() or not row[1].isdigit():
+            raise ValueError('series_value')
+        current = date.fromisoformat(row[0]+'-01')
+        if previous and current!=months(previous,1):
+            raise ValueError('series_month_gap')
+        result.append([row[0],int(row[1])])
+        previous = current
+    if not 42<=len(result)<=240:
+        raise ValueError('series_length')
+    return result

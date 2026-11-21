@@ -6,7 +6,6 @@ from email.policy import default
 from getpass import getpass
 from hashlib import scrypt, sha256
 from hmac import compare_digest
-from http import HTTPStatus
 from http.cookies import SimpleCookie, CookieError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -15,10 +14,10 @@ from urllib.parse import parse_qs, urlsplit, unquote
 from zipfile import BadZipFile
 from xml.etree.ElementTree import ParseError
 import os
+import json
 import re
 import secrets
 import time
-import warnings
 
 from . import data, insights, intake, rules, ui, xlsx
 
@@ -158,7 +157,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(404)
         if not post and path.startswith('/language/') and path.split('/')[-1] in ui.LOCALES:
             # Restrict redirects to the four dashboard routes and sign-in.
-            previous = urlsplit(self.headers.get('Referer','')).path
+            previous = '/'+parse_qs(url.query).get('view',[''])[0]
+            if previous=='/case':
+                previous='/queue'
             if previous not in ('/login','/overview','/queue','/reports','/ai','/forecast','/intake') and not re.fullmatch(r'/case/DEMO-[0-9]{5,}',previous):
                 previous = '/'
             return self.redirect(previous,[('Set-Cookie',self.cookie('locale',path.split('/')[-1],31536000))])
@@ -178,26 +179,39 @@ class Handler(BaseHTTPRequestHandler):
             if path in ('/','/login') and not post:
                 return self.redirect('/reports' if role=='importer' else '/overview')
             allowed = {
-              'judge':{'overview','queue','case','reports','export','ai','forecast','intake','intake-save','seed','snapshot','import','logout'},
+              'judge':{'overview','queue','case','reports','export','ai','forecast','forecast-upload','forecast-reset','intake','intake-save','seed','snapshot','import','logout'},
               'worker':{'overview','queue','case','reports','export','ai','intake','intake-save','snapshot','logout'},
-              'manager':{'overview','reports','export','ai','forecast','snapshot','logout'},
+              'manager':{'overview','reports','export','ai','forecast','forecast-upload','forecast-reset','snapshot','logout'},
               'importer':{'reports','intake','intake-save','ai','seed','snapshot','import','logout'},
             }
             route = path.split('/')[1]
-            if route not in allowed[role] or (self.server.hosted and route=='import'):
+            if route not in allowed[role] or (self.server.hosted and
+                    (route in ('import','forecast-upload','forecast-reset','intake-save') or (route=='intake' and post))):
                 return self.page('no_access',ui.heading(self.lang,'no_access'),403)
-            mutations = {'logout','seed','snapshot','import','intake-save'}
+            mutations = {'logout','seed','snapshot','import','intake-save','forecast-upload','forecast-reset'}
             if (route in mutations and not post) or (post and route not in mutations|{'intake'}):
                 return self.respond(405)
             query = {k:v[0] for k,v in parse_qs(url.query,max_num_fields=15).items()}
             if post:
-                fields,files = self.form(40_000_000 if route=='import' else 2_300_000 if route=='intake' else 8192)
+                fields,files = self.form(40_000_000 if route=='import' else 2_300_000 if route=='intake' else 40_000 if route=='forecast-upload' else 8192)
                 if not compare_digest(fields.get('csrf','').encode(),self.csrf.encode()):
                     return self.page('no_access',ui.heading(self.lang,'no_access'),403)
                 if route=='logout':
                     with db:
                         db.execute('DELETE FROM sessions WHERE token=?',(digest(token),))
                     return self.redirect('/login',[('Set-Cookie',self.cookie('sid','',0))])
+                if route in ('forecast-upload','forecast-reset'):
+                    with db:
+                        if route=='forecast-upload':
+                            if len(files)!=1 or files[0][0]!='series':
+                                raise ValueError('expected_series')
+                            series = insights.read_aggregate_series(files[0][1])
+                            db.execute('INSERT INTO forecast_input VALUES(?,?) ON CONFLICT(username) DO UPDATE SET series=excluded.series',
+                                       (auth['username'],json.dumps(series)))
+                        else:
+                            db.execute('DELETE FROM forecast_input WHERE username=?',(auth['username'],))
+                        db.execute('INSERT INTO audit VALUES(datetime("now"),?,?)',(route,'accepted'))
+                    return self.redirect('/forecast')
                 if route=='snapshot':
                     selected = int(fields.get('id','0'))
                     if db.execute('SELECT 1 FROM snapshots WHERE id=? AND (?=0 OR source="synthetic")',
@@ -222,13 +236,13 @@ class Handler(BaseHTTPRequestHandler):
             if role=='worker':
                 cases = [c for c in cases if c['worker']==auth['assignment']]
             if route=='overview':
-                return self.page(route,ui.overview(self.lang,self.snapshot,cases,role=='manager'))
+                return self.page(route,ui.overview(self.lang,self.snapshot,cases,role=='manager',query.get('factor','age')))
             if route=='queue':
                 return self.page(route,ui.queue(self.lang,cases,query.get('q','')[:64],max(1,int(query.get('page','1'))),query.get('state','')))
             if route=='case':
                 identifier = unquote(path.split('/')[-1])
                 case = next((c for c in cases if c['id']==identifier),None)
-                return self.page('queue',ui.detail(self.lang,case) if case else ui.heading(self.lang,'empty'),200 if case else 404)
+                return self.page('case',ui.detail(self.lang,case) if case else ui.heading(self.lang,'empty'),200 if case else 404)
             if route=='export':
                 blob = xlsx.write(ui.export(self.lang,self.snapshot,cases,role))
                 return self.respond(200,blob,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -239,7 +253,11 @@ class Handler(BaseHTTPRequestHandler):
                 aggregate = insights.gateway(insights.AggregateQuestion('entry_cohort'),self.snapshot['asof'],cases) if role in ('judge','manager') and self.snapshot['source']=='synthetic' else None
                 return self.page(route,ui.assistant(self.lang,topic,answer,aggregate))
             if route=='forecast':
-                return self.page(route,ui.forecast(self.lang,insights.backtest(),min(100000,max(0,int(query.get('rate','0')))),cases))
+                stored = db.execute('SELECT series FROM forecast_input WHERE username=?',(auth['username'],)).fetchone() if not self.server.hosted else None
+                series = json.loads(stored[0]) if stored else None
+                report = insights.backtest([r[1] for r in series] if series else None)
+                return self.page(route,ui.forecast(self.lang,report,min(100000,max(0,int(query.get('rate','0')))),cases,
+                                                   series,not self.server.hosted,self.csrf))
             if route in ('intake','intake-save'):
                 return self.intake(db,route,post,fields if post else {},files if post else [],tables,cases)
             return self.respond(404)
@@ -307,8 +325,6 @@ class Handler(BaseHTTPRequestHandler):
             authorized = {r['_person'] for r in tables['clients']}
         num_to_person = {r['Zemis Nummer']:r['_person'] for r in tables['clients'] if r['_person'] in authorized}
         if route=='intake-save':
-            if self.server.hosted:
-                return self.page('no_access',ui.heading(lang,'no_access'),403)
             pid = fields.get('person')
             category = fields.get('category')
             if pid not in authorized or category not in insights.CATEGORIES:

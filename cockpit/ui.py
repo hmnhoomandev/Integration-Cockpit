@@ -1,6 +1,6 @@
 """Server-rendered German, English and French interface."""
 from html import escape
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote
 from itertools import chain
 
 from . import rules
@@ -51,6 +51,7 @@ COPY = {
  'outside_scope':('Ausserhalb der Zielgruppe','Outside the target population','Hors population cible'),
  'scope_unknown':('Status, Alter oder Zuständigkeit prüfen','Review status, age or responsibility','Vérifier statut, âge ou prise en charge'),
  'entry_unknown':('Einreisedatum klären','Confirm date of entry','Confirmer la date d’arrivée'),
+ 'market_unknown':('Ersten Arbeitsmarkt bestätigen','Verify primary labour-market evidence','Vérifier l’appartenance au marché primaire'),
  'missing_end':('Ende der Zuständigkeit klären','Confirm end of responsibility','Confirmer la fin de prise en charge'),
  'employment':('Beschäftigungsdauer belegt','Employment duration evidenced','Durée d’emploi attestée'),
  'education':('Ausbildung der Sek II oder Tertiärstufe','Upper-secondary or tertiary enrolment','Formation du secondaire II ou du tertiaire'),
@@ -105,6 +106,25 @@ COPY = {
  'course':('Kursteilnahme','Course participation','Participation à un cours'),
  'scheduling':('Betreuungszeiten','Childcare scheduling','Horaires de garde'),
  'housing':('Wohnstabilität','Housing stability','Stabilité du logement'),
+ 'explorer':('Faktorenanalyse','Factor explorer','Exploration des facteurs'),
+ 'age':('Alter','Age','Âge'),
+ 'course_yes':('Sprachkurs erfasst','Language course recorded','Cours de langue enregistré'),
+ 'course_none':('Kein Sprachkurs erfasst','No language course recorded','Aucun cours de langue enregistré'),
+ 'observation':('Nur Kohorten mit abgelaufener A1-Frist','Cohorts with completed A1 follow-up','Cohortes dont le suivi A1 est terminé'),
+ 'missing':('Fehlende Angaben','Missing information','Données manquantes'),
+ 'timeline':('Verlauf','Timeline','Historique'),
+ 'caseload':('Fallbelastung nach Zuständigkeit','Caseload by assignment','Charge de travail par affectation'),
+ 'compare':('Wirkung auf Zuständigkeitsende','Change in responsibility end dates','Effet sur la fin de prise en charge'),
+ 'quality_note':('Abgleich von Zeiträumen; Unstimmigkeiten müssen geprüft werden.','Date overlap comparison; discrepancies require review.','Comparaison des périodes ; les écarts doivent être vérifiés.'),
+ 'employment_status':('Erwerbsstatus','Employment category','Catégorie d’emploi'),
+ 'change':('Stichtag vergleichen','Compare snapshots','Comparer les instantanés'),
+ 'aggregate_upload':('Monatszahlen hochladen','Upload monthly aggregate counts','Importer des agrégats mensuels'),
+ 'aggregate_reset':('Importierte Reihe entfernen','Remove uploaded series','Supprimer la série importée'),
+ 'aggregate_local':('Lokal importierte Monatsreihe','Locally uploaded monthly series','Série mensuelle importée localement'),
+ 'aggregate_help':('CSV mit month,count und mindestens 42 aufeinanderfolgenden Monaten. Nur aggregierte Daten.','CSV with month,count and at least 42 consecutive months. Aggregate data only.','CSV avec month,count et au moins 42 mois consécutifs. Données agrégées uniquement.'),
+ 'source_limit':('Lehrpersonen- und Betreuungsverläufe liegen in den Exporten nicht als verknüpfbare Zeitreihen vor.','The exports lack linkable teacher and childcare histories.','Les exports ne contiennent pas d’historique chaînable des enseignants ou de la garde.'),
+
+
 }
 
 
@@ -156,7 +176,7 @@ def layout(lang,active,body,account=None,csrf='',snapshot=None):
         if account['role']=='importer':
             menus = ['reports','intake','ai']
     nav = ''.join(f'<a href="/{key}" {"aria-current=page" if key==active else ""}>{text(lang,key)}</a>' for key in menus) if account else ''
-    language = ''.join(f'<a lang="{locale}" href="/language/{locale}" {"aria-current=page" if i==lang else ""}>{locale[:2].upper()}</a>'
+    language = ''.join(f'<a lang="{locale}" href="{href(f'/language/{locale}', view=active)}" {"aria-current=page" if i==lang else ""}>{locale[:2].upper()}</a>'
                        for i,locale in enumerate(LOCALES))
     date = f'<span class="snapshot">{text(lang,"snapshot")} <strong>{esc(snapshot["asof"])}</strong></span>' if snapshot else ''
     logout = post('/logout',csrf,action(lang,'logout')) if account else ''
@@ -165,28 +185,44 @@ def layout(lang,active,body,account=None,csrf='',snapshot=None):
     return f'''<!doctype html><html lang="{LOCALES[lang]}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{text(lang,active)} · Integrations-Cockpit Bern</title><link rel="stylesheet" href="/static/app.css"></head>
 <body class="{mode}">{frame}<div class="workspace"><header>{date}<div class="header-actions"><div class="languages">{language}</div>{logout}</div></header>
-<main id="main">{body}</main></div></body></html>'''
+<main id="main">{body}<footer class="photo-credit">{'<a href="https://commons.wikimedia.org/wiki/File:Bern_Altstadt_von_Rosengarten_20211007.jpg">Bern · Daniel Kraft</a> · <a href="https://creativecommons.org/licenses/by-sa/3.0/">CC BY-SA 3.0</a>' if active in ('overview','login') else ''}</footer></main></div></body></html>'''
 
 
-def overview(lang,snapshot,cases,management):
+def overview(lang,snapshot,cases,management,dimension='age'):
     s = rules.counts(cases,0)
     metrics = (('people',len(cases)),('homes',len({c['home'] for c in cases})),('met',s['achieved']),
                ('follow',sum(s[key] for key in ('risk','overdue','review'))))
     if management and snapshot['source']!='synthetic':
-        metrics = tuple((key,value if value>=rules.MIN_GROUP else '—') for key,value in metrics)
+        metrics = tuple((key,'—') for key,_ in metrics)
     kpis = ''.join(f'<article class="kpi"><span>{text(lang,k)}</span><strong>{v}</strong></article>' for k,v in metrics)
     goals = []
     for i,key in enumerate(('a1','work','household')):
         totals = rules.counts(cases,i)
-        statuses = [(state,count) for state,count in totals.most_common() if snapshot['source']=='synthetic' or not management or count>=rules.MIN_GROUP]
+        statuses = [(state,count) for state,count in totals.most_common() if snapshot['source']=='synthetic' or not management]
         rows = ''.join(f'<li>{badge(lang,state)}<strong>{count}</strong></li>' for state,count in statuses)
         goals.append(f'<article class="panel"><h3>{text(lang,key)}</h3><ul class="breakdown">{rows}</ul></article>')
-    groups = rules.group_metrics(cases)
+    groups = rules.group_metrics(cases) if snapshot['source']=='synthetic' or not management else []
     group_html = table([tr(lang,'year'),tr(lang,'eligible'),tr(lang,'met')],((esc(y),esc(n) if n else text(lang,'suppressed'),esc(k)) for y,n,k in groups))
-    return f'''<section class="hero"><div class="hero-copy"><p class="eyebrow">{text(lang,'demo' if snapshot['source']=='synthetic' else 'local')}</p>
+    factor_panel = ''
+    if snapshot['source']=='synthetic':
+        from datetime import date
+        breakdown,total,missing = rules.factors(cases,date.fromisoformat(snapshot['asof']),dimension)
+        choices = ''.join(f'<a class="chip" href="/overview?factor={k}" {"aria-current=page" if k==dimension else ""}>{text(lang,k)}</a>'
+                          for k in ('age','schooling','course'))
+        rendered = table([tr(lang,'category'),'n',tr(lang,'met'),'95% CI'],
+          ((text(lang,label),esc(n) if n else text(lang,'suppressed'), f'{k/n:.1%}' if n else '—',
+            f'{band[0]:.0%}–{band[1]:.0%}' if band else '—') for label,n,k,band in breakdown))
+        workers = {}
+        for c in cases:
+            workers.setdefault(c['worker'],[]).append(c)
+        caseload = table([tr(lang,'worker'),tr(lang,'people'),tr(lang,'follow'),tr(lang,'quality')],
+          ((esc(k),esc(len(items)),esc(sum(c['goals'][0]['state'] in ('risk','review','overdue') for c in items)),
+          esc(sum(bool(c['gaps']) for c in items))) for k,items in sorted(workers.items()) if len(items)>=rules.MIN_GROUP))
+        factor_panel = f'<div class="two"><section class="panel"><h2>{text(lang,"explorer")}</h2><p>{text(lang,"observation")} · n={total} · {text(lang,"missing")} {missing}</p><div class="chips">{choices}</div>{rendered}<p>{text(lang,"source_limit")}</p></section><section class="panel"><h2>{text(lang,"caseload")}</h2>{caseload}<p>{text(lang,"quality_note")}</p></section></div>'
+    return f'''<section class="hero"><img class="bern-image" src="/static/bern.jpg" alt=""><div class="hero-copy"><p class="eyebrow">{text(lang,'demo' if snapshot['source']=='synthetic' else 'local')}</p>
 {heading(lang,'overview',text(lang,'lead'))}</div></section>
 <div class="kpis">{kpis}</div><h2>{text(lang,'goals')}</h2><div class="three">{''.join(goals)}</div>
-<section class="panel"><h2>{text(lang,'groups')}</h2><p>{text(lang,'group_note')}</p>{group_html}</section>'''
+<section class="panel"><h2>{text(lang,'groups')}</h2><p>{text(lang,'group_note')}</p>{group_html}</section>{factor_panel}'''
 
 
 def queue(lang,cases,query,page,filter_state):
@@ -198,7 +234,7 @@ def queue(lang,cases,query,page,filter_state):
     options = ''.join(f'<option value="{key}" {"selected" if key==filter_state else ""}>{text(lang,key)}</option>' for key in limits)
     form = f'''<form class="inline" action="/queue"><label>{text(lang,'search')} <input name="q" value="{esc(query)}"></label>
 <label>{text(lang,'a1')} <select name="state"><option value="">—</option>{options}</select></label>{action(lang,'search')}</form>'''
-    rows = ((f'<a class="case-link" href="/case/{esc(c["id"])}">{esc(c["id"])}</a>',
+    rows = ((f'<a class="case-link" href="/case/{quote(c["id"],safe="")}">{esc(c["id"])}</a>',
              *(badge(lang,g['state']) for g in c['goals']),esc(c['goals'][0]['deadline']),text(lang,c['goals'][0]['reason']))
             for c in cases[offset:offset+20])
     pagination = '<div class="pagination">'
@@ -216,7 +252,17 @@ def detail(lang,case):
         rows = [(tr(lang,'deadline'),g['deadline']),(tr(lang,'attained'),g['achieved']),(tr(lang,'scenario'),g['earliest'])]
         facts = ''.join(f'<dt>{esc(k)}</dt><dd>{esc(v)}</dd>' for k,v in rows)
         sections.append(f'<section class="panel"><h2>{text(lang,key)}</h2>{badge(lang,g["state"])}<p>{text(lang,g["reason"])}</p><dl>{facts}<dt>{text(lang,"evidence")}</dt><dd>{ev}</dd></dl></section>')
-    return heading(lang,'case',esc(case['id']))+'<div class="three">'+''.join(sections)+'</div>'
+    timeline = []
+    for dataset, label, start, end, fact in (
+        ('work','work','Von','Bis','Erwerbsstatus'),('education','education','Start','Abschluss','Art'),
+        ('housing','housing','Unterbringung Von','Unterbringung Bis','Unterbringung Art'),
+        ('status','case','Verfahrensstand Gültig ab','Verfahrensstand Gültig bis','Verfahrensstand')):
+        for record in case['tables'][dataset][:20]:
+            timeline.append((record.get(start) or '',record.get(end),label,record.get(fact)))
+    rows = table([tr(lang,'source'),tr(lang,'category'),tr(lang,'deadline'),'↔'],
+        ((text(lang,label),esc(value),esc(a),esc(b)) for a,b,label,value in sorted(timeline,key=lambda row:row[0],reverse=True)))
+    return heading(lang,'case',esc(case['id']))+'<div class="three">'+''.join(sections)+f'</div><section class="panel"><h2>{text(lang,"timeline")}</h2>{rows}</section>'
+
 
 
 def reports(lang,snapshot,history,role,csrf,hosted,notice='',issues=()):
@@ -257,7 +303,7 @@ def assistant(lang,topic,result,aggregate):
 <section class="panel"><h2>{text(lang,'aggregate')}</h2><p>{a}</p><p>{text(lang,'group_note')}</p></section></div>'''
 
 
-def forecast(lang,report,tariff,cases):
+def forecast(lang,report,tariff,cases,series=None,can_upload=False,csrf=''):
     values = report['values']
     top = max(values+[report['hi']])
     bars = ''.join(f'<meter min="0" max="{top}" value="{v}" aria-label="{i+1}: {v}">{v}</meter>'
@@ -269,19 +315,27 @@ def forecast(lang,report,tariff,cases):
     checks = table(['Model','MAE'],((esc(k),esc(v)) for k,v in report['mae'].items()))
     status = f'{esc(report["model"])} · {text(lang,"heldout")} {report["heldout"]} · {report["coverage"]:.0%}'
     raw_values = ', '.join(map(str,values))
-    return heading(lang,'forecast',text(lang,'model'))+f'''
+    series_meta = f'{esc(series[0][0])} → {esc(series[-1][0])} · {len(series)}' if series else '2022-01 → 2025-12 · 48 · seed 2026 · SYN'
+    controls = ''
+    if can_upload:
+        controls = '<section class="panel"><p>'+text(lang,'aggregate_help')+'</p>'+post('/forecast-upload',csrf,
+            '<label>CSV <input type="file" name="series" accept=".csv,text/csv" required></label>'+action(lang,'aggregate_upload'),True)
+        if series:
+            controls += post('/forecast-reset',csrf,action(lang,'aggregate_reset'))
+        controls += '</section>'
+    return heading(lang,'forecast',text(lang,'aggregate_local' if series else 'model'))+f'''
 <div class="two"><section class="panel reading"><h2>{text(lang,'interval')}</h2><strong class="forecast-value">{report['est']} <small>{report['lo']}–{report['hi']}</small></strong>
 <p>{status}</p><div class="series" aria-hidden="true">{bars}</div><details><summary>{text(lang,'data_card')}</summary>
-<p>2022-01 → 2025-12 · 48 · seed 2026 · SYN</p><p class="mono">{raw_values}</p></details></section>
+<p>{series_meta}</p><p class="mono">{raw_values}</p></details></section>
 <section class="panel"><h2>MAE</h2>{checks}</section></div>
 <div class="two"><section class="panel"><h2>{text(lang,'public')}</h2><p>{text(lang,'public_note')}</p><a href="{FSO}">{text(lang,'source')} · BFS / FSO</a></section>
 <section class="panel"><h2>{text(lang,'scenario2027')}</h2><p>VA / F-FL · 60 M · {changed}/{len(cohort)}</p>
 <form action="/forecast"><label>{text(lang,'tariff')} <input type="number" name="rate" min="0" max="100000" value="{tariff}"></label>{action(lang,'choose')}</form>
-<p>{met} × CHF {tariff:,} = <strong>CHF {met*tariff:,}</strong></p></section></div>'''
+<p>{met} × CHF {tariff:,} = <strong>CHF {met*tariff:,}</strong></p></section></div>{controls}'''
 
 
 def login(lang,csrf,error=''):
-    return '<section class="login-hero"><div><p class="eyebrow">'+text(lang,'demo')+'</p><h1>Integrations-<br>Cockpit Bern</h1><p>'+text(lang,'lead')+'</p></div></section><section class="login-card">'+heading(lang,'login')+(
+    return '<section class="login-hero"><img class="bern-image" src="/static/bern.jpg" alt=""><div><p class="eyebrow">'+text(lang,'demo')+'</p><h1>Integrations-<br>Cockpit Bern</h1><p>'+text(lang,'lead')+'</p></div></section><section class="login-card">'+heading(lang,'login')+(
         f'<p class="feedback" role="alert">{text(lang,error)}</p>' if error else '')+post('/login',csrf,
         f'<label>{text(lang,"username")}<input name="username" autocomplete="username" required></label>'
         f'<label>{text(lang,"password")}<input name="password" type="password" autocomplete="current-password" required></label>'
@@ -291,21 +345,26 @@ def login(lang,csrf,error=''):
 def export(lang,snapshot,cases,role):
     keys = ('a1','work','household')
     source = tr(lang,'demo' if snapshot['source']=='synthetic' else 'local')
-    tabs = {'Metadata':[['Snapshot',snapshot['asof']],['Origin',source],['Rule version',rules.VERSION]]}
+    import json
+    tabs = {tr(lang,'data_card'):[[tr(lang,'snapshot'),snapshot['asof']],[tr(lang,'source'),source],[tr(lang,'policy'),rules.VERSION]]}
+    coverage = [[tr(lang,'source'),tr(lang,'rows')]]+[[key,n] for key,n in json.loads(snapshot['inspected']).items()]
+
+    def details(index, selected):
+        for case in selected:
+            g = case['goals'][index]
+            yield [case['home'] if index==2 else case['id'],case['worker'] if index!=2 else None,
+                   case['entry'].year if case['entry'] and index!=2 else None,
+                   g['deadline'],g['achieved'],tr(lang,g['reason']),
+                   ', '.join(f'{dataset}:{line}' for dataset,line in g['evidence']),tr(lang,g['state'])]
     for i,key in enumerate(keys):
-        if i==2:
-            selected = {c['home']:c for c in cases if c['goals'][i]['state']!='na'}.values()
-        else:
-            selected = cases
+        selected = {c['home']:c for c in cases if c['goals'][i]['state']!='na'}.values() if i==2 else cases
         summary = rules.counts(cases,i)
-        tabs[tr(lang,key)] = chain([[tr(lang,key),tr(lang,'rows')]],
-            ([tr(lang,s),n] for s,n in sorted(summary.items()) if role!='manager' or n>=rules.MIN_GROUP))
+        tabs[tr(lang,key)] = [[tr(lang,key),tr(lang,'rows')]] + [
+            [tr(lang,state),number] for state,number in sorted(summary.items())
+            if role!='manager' or (snapshot['source']=='synthetic' and number>=rules.MIN_GROUP)]
         if role!='manager':
-            tabs[f'{i+1} · {tr(lang,"evidence")}'] = chain(
-                [['ID',*[tr(lang,k) for k in ('worker','year','deadline','attained','reason','evidence')],tr(lang,'goals')]],
-                ([c['home'] if i==2 else c['id'],c['worker'] if i!=2 else None,c['entry'].year if c['entry'] and i!=2 else None,
-                  g['deadline'],g['achieved'],tr(lang,g['reason']),', '.join(f'{dataset}:{line}' for dataset,line in g['evidence']),tr(lang,g['state'])]
-                 for c in selected for g in (c['goals'][i],)))
+            headers = ['ID',*[tr(lang,k) for k in ('worker','year','deadline','attained','reason','evidence')],tr(lang,'goals')]
+            tabs[f'{i+1} · {tr(lang,"evidence")}'] = chain([headers],details(i,selected))
     if role!='manager':
         for field, label in (('worker','worker'),('entry','year')):
             groups = {}
@@ -316,4 +375,5 @@ def export(lang,snapshot,cases,role):
             tabs[tr(lang,label)] = [[tr(lang,label),tr(lang,'people'),tr(lang,'met')]] + [
                 [key,len(items),rules.counts(items,0)['achieved']] for key,items in sorted(groups.items())]
         tabs['ZEMIS'] = [['ID',tr(lang,'evidence')]] + [[case['id'],','.join(map(str,case['gaps']))] for case in cases if case['gaps']]
+    tabs[tr(lang,'coverage')] = coverage
     return tabs

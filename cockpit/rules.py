@@ -2,6 +2,7 @@
 from calendar import monthrange
 from collections import Counter, defaultdict
 from datetime import date, timedelta
+from math import sqrt
 
 VERSION = '2026.11-demo.1'
 ELIGIBLE = {'VA','F-FL','B-FL','B-RSFL','B-SL'}
@@ -81,12 +82,15 @@ def goal1(person, entry, asof, tables):
     return judgement(asof,deadline,None,[],'missing_proof')
 
 
-def goal2(tables, asof, start, end):
+def goal2(tables, asof, start, end, synthetic=False):
     if not end:
         return result('review','missing_end')
     cutoff = min(end,asof)
-    jobs = [r for r in tables['work'] if r.get('Erwerbsstatus')=='1. Arbeitsmarkt'
-            and isinstance(r.get('Pensum %'),(int,float)) and r['Pensum %']>=60]
+    potential_jobs = [r for r in tables['work'] if isinstance(r.get('Pensum %'),(int,float))
+                      and r['Pensum %']>=60 and r.get('Von') and r['Von']<=cutoff.isoformat()
+                      and (not r.get('Bis') or r['Bis']>=start.isoformat())]
+    jobs = [r for r in potential_jobs if r.get('Erwerbsstatus')=='1. Arbeitsmarkt'
+            or (synthetic and r.get('Bemerkungen')=='Demo: 1. Arbeitsmarkt')]
     spans = intervals(jobs,'Von','Bis',start,cutoff)
     paths = []
     earliest = None
@@ -103,6 +107,8 @@ def goal2(tables, asof, start, end):
     if paths:
         d,reason,ev = min(paths)
         return judgement(asof,end,d,ev,reason)
+    if len(jobs)<len(potential_jobs):
+        return result('review','market_unknown',end,evidence=[('work',r['_line']) for r in potential_jobs if r not in jobs])
     return judgement(asof,end,None,[],'check_continuity',earliest)
 
 
@@ -158,7 +164,7 @@ def evaluate(snapshot, rows):
             language=employment=result('review','scope_unknown')
         else:
             language = goal1(person,entry,now,tables) if entry and entry<=now else result('review','entry_unknown')
-            employment = goal2(tables,now,start,end)
+            employment = goal2(tables,now,start,end,snapshot['source']=='synthetic')
         if home not in houses:
             family = household[home]
             cutoff = as_date(next(iter(ends[home]))) if len(ends[home])==1 else None
@@ -171,7 +177,7 @@ def evaluate(snapshot, rows):
             if a and a<=snapshot['asof'] and not any(w.get('Von') and w['Von']<=b and (w.get('Bis') or '9999')>=a for w in tables['work']):
                 gaps.append(z['_line'])
         cases.append(dict(id=pid,worker=person.get('Fallführung') or '–',home=home,entry=entry,age=age,
-            status=status,goals=(language,employment,financial),tables=tables,gaps=gaps,end=end))
+            status=status,school_years=person.get('Schuljahre vor Einreise'),goals=(language,employment,financial),tables=tables,gaps=gaps,end=end))
     return cases
 
 
@@ -190,3 +196,45 @@ def counts(cases, goal):
     if goal==2:
         cases = {c['home']:c for c in cases if c['goals'][goal]['state']!='na'}.values()
     return Counter(case['goals'][goal]['state'] for case in cases)
+
+
+def factors(cases, asof, dimension):
+    """Fixed synthetic partitions restricted to complete A1 follow-up."""
+    groups = defaultdict(list)
+    unknown = 0
+    eligible = 0
+    for case in cases:
+        goal = case['goals'][0]
+        if goal['state']=='na' or not goal['deadline'] or goal['deadline']>asof:
+            continue
+        eligible += 1
+        if goal['state']=='review':
+            unknown += 1
+            continue
+        if dimension=='schooling':
+            value = case.get('school_years')
+            group = '0–8' if isinstance(value,(int,float)) and value<=8 else '9+' if isinstance(value,(int,float)) else None
+        elif dimension=='course':
+            group = 'course_yes' if any(r.get('Art') in ('Förderangebot Sprache','Sprachkurs im erweiterten Verfahren (N)') and r.get('Start')
+                      and r['Start']<=goal['deadline'].isoformat() for r in case['tables']['education']) else 'course_none'
+        else:
+            age = case.get('age')
+            group = ('16–29' if age<30 else '30–44' if age<45 else '45+') if age is not None else None
+        if group is None:
+            unknown += 1
+            continue
+        groups[group].append(goal['state']=='achieved')
+    results = []
+    for label,outcomes in sorted(groups.items()):
+        n = len(outcomes)
+        k = sum(outcomes)
+        if min(n,k,n-k)<MIN_GROUP:
+            results.append((label,None,None,None))
+            continue
+        rate = k/n
+        z = 1.96
+        d = 1+z*z/n
+        mid = (rate+z*z/(2*n))/d
+        radius = z*sqrt((rate*(1-rate)+z*z/(4*n))/n)/d
+        results.append((label,n,k,(mid-radius,mid+radius)))
+    return results,eligible,unknown

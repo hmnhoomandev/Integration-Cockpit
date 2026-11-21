@@ -44,16 +44,16 @@ def seed(asof, size=144):
         entry = date(2022+i%4, 10 if i == 1 else 1+i%12, 1+i%24)
         if i == 0:
             entry = date(2023,10,16)
-        status = ('VA','B-FL','F-FL','B-RSFL','S','N')[i%6]
+        status = ('VA','B-FL','F-FL','B-RSFL','S','N (Asylsuchende)')[i%6]
         end = date(2028+(i//2)%2,6,30)
         worker = ('A','B','C')[(i//2)%3]
         add('clients', ids | {'Geburtsdatum':date(1977+i%36,4,8),'Zuständigkeitsbeginn':entry,'Zuständigkeitsende':end,
                              'Datum Übergang Gemeindezuständigkeit':None,'Fallführung':worker,'Verfahrensstand':status,
                              'Schuljahre vor Einreise':4+i%12,'Muttersprache':('Arabisch','Tigrinya','Dari')[i%3]})
         add('events',ids | {'Asylgeschäftsart':'Aufenthalt (Einreise)','Ereignisdatum':entry})
-        add('events',ids | {'Asylgeschäftsart':'Asylgesuch','Ereignisdatum':entry + timedelta(days=2)})
+        add('events',ids | {'Asylgeschäftsart':'Asylgesuch in CH (Kt normal, Kat. III)','Ereignisdatum':entry + timedelta(days=2)})
         add('status',ids | {'Verfahrensstand Gültig ab':entry,'Verfahrensstand':status})
-        add('membership',ids | {'Dossierperson Von':entry,'Rolle':'Dossiermitglied'})
+        add('membership',ids | {'Dossierperson Von':entry,'Rolle':'Familienmitglied'})
         add('housing',ids | {'Unterbringung Von':entry,'Unterbringung Art':'Wohnung','PLZ':'3000','Ort':'Bern'})
         if i%4 != 3:
             proof = date(2026,10,12) if i == 0 else entry + timedelta(days=200+i*11)
@@ -64,11 +64,11 @@ def seed(asof, size=144):
                     add('official',ids | {'Art':'Sprachniveau A1','Erreicht am':proof,'Jahr Grundgesamtheit':entry.year,'Ziel mit Status S erreicht':'Nein'})
         if i%3:
             job = max(entry,date(2025,3+i%8,1))
-            add('work',ids | {'Von':job,'Pensum %':80 if i%5 else 50,'Arbeitgeber Name':'Demo Betrieb','Erwerbsstatus':'1. Arbeitsmarkt'})
+            add('work',ids | {'Von':job,'Pensum %':80 if i%5 else 50,'Arbeitgeber Name':'Demo Betrieb','Erwerbsstatus':'unselbstständig','Bemerkungen':'Demo: 1. Arbeitsmarkt'})
         if i%3 or i%11 == 0:
             add('zemis',ids | {'Arbeitsbeginn':max(entry,date(2025,3+i%8,1)),'Betrieb':'Demo Betrieb'})
         if i%3 == 0:
-            add('education',ids | {'Start':max(entry,date(2025,8,1)),'Art':'Sek II' if i%4==0 else 'Sprachkurs',
+            add('education',ids | {'Start':max(entry,date(2025,8,1)),'Art':'Sek II' if i%4==0 else 'Förderangebot Sprache',
                                    'Institution Name':'Demo Lernzentrum','Stunden pro Woche':8})
         if i%2 == 0:
             add('support',ids | {'Unterstützung':'Sozialhilfe','Finanzielle Unterstützung Gültig von':date(2022,1,1),
@@ -96,6 +96,8 @@ def connect(path):
       CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, username TEXT REFERENCES accounts(username),
         csrf TEXT, expires INTEGER, selected INTEGER REFERENCES snapshots(id) ON DELETE SET NULL);
       CREATE TABLE IF NOT EXISTS audit(at TEXT, action TEXT, outcome TEXT);
+      CREATE TABLE IF NOT EXISTS forecast_input(
+        username TEXT PRIMARY KEY REFERENCES accounts(username) ON DELETE CASCADE, series TEXT);
       CREATE TABLE IF NOT EXISTS intake(snapshot INTEGER REFERENCES snapshots(id) ON DELETE CASCADE,
         person TEXT, category TEXT, PRIMARY KEY(snapshot,person));
     """)

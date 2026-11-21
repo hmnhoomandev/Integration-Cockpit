@@ -98,3 +98,12 @@ dd { margin: .3rem 0 .75rem; overflow-wrap: anywhere; }
 .login-card button { justify-content: center; margin-top: .5rem; }
 @media (max-width: 1000px) { .dashboard { grid-template-columns: 185px minmax(0,1fr); } .kpis { grid-template-columns: repeat(2,minmax(0,1fr)); } .three { grid-template-columns: 1fr; } }
 @media (max-width: 690px) { .dashboard { display: block; } aside { position: static; height: auto; min-height: 0; padding: .8rem; } nav { display: flex; gap: .25rem; overflow: auto; margin-top: .75rem; } nav a { white-space: nowrap; } .aside-bottom { display: none; } .two,.signin main { grid-template-columns: 1fr; } .signin main { padding-top: 1rem; } .login-hero { min-height: 210px; } .hero { min-height: 215px; } }
+.photo-credit { font-size: .73rem; margin: .4rem 0 1rem; color: var(--muted); }
+.chart-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.6fr); gap: .85rem; align-items: center; margin-bottom: .75rem; }
+.chart-grid meter { width: 100%; }
+@media(max-width:690px) { .chart-grid { grid-template-columns: 1fr; } }
+.hero, .login-hero { background-image: radial-gradient(ellipse at 75% 30%,#397a57,#0d2c23); }
+.bern-image { position: absolute; z-index: -3; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 46%; }
+.hero::before, .login-hero::before { content: ""; position: absolute; inset: 0; z-index: -2; }
+.hero::before { background: linear-gradient(90deg,#102f27fa 5%,#102f27bb 48%,#102f2728); }
+.login-hero::before { background: linear-gradient(0deg,#102f27fc 8%,#102f27b4 48%,#102f2740); }
