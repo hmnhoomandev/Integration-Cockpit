@@ -161,7 +161,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(404)
         if not post and path.startswith('/language/') and path.split('/')[-1] in ui.LOCALES:
             try:
-                values = parse_qs(url.query,max_num_fields=8)
+                values = parse_qs(url.query,max_num_fields=10)
             except ValueError:
                 return self.respond(400)
             view = '/'+values.get('view',[''])[0].lstrip('/')
@@ -170,7 +170,7 @@ class Handler(BaseHTTPRequestHandler):
             routes = {'/login','/overview','/queue','/reports','/ai','/forecast','/intake'}
             if view not in routes and not re.fullmatch(r'/case/[A-Za-z0-9._~%\-]{1,180}',view):
                 view = '/'
-            filters = {key:values[key][0][:64] for key in ('q','state','page','goal','factor','topic') if key in values}
+            filters = {key:values[key][0][:64] for key in ('q','state','page','goal','factor','topic','intent','asof') if key in values}
             return self.redirect(view+('?' + urlencode(filters) if filters else ''),
                                  [('Set-Cookie',self.cookie('locale',path.split('/')[-1],31536000))])
         self.view_path = self.path if not post else path
@@ -261,9 +261,27 @@ class Handler(BaseHTTPRequestHandler):
                     return self.show_reports(db,diagnostic,query.get('notice',''))
                 return self.quality(db,diagnostic)
             self.snapshot = data.snapshot_metadata(db,auth['selected'],self.server.hosted)
-            _,tables = data.get_snapshot(db,self.snapshot['id']) if self.snapshot else (None,{})
             if not self.snapshot:
                 return self.page(route,ui.heading(self.lang,'empty'),404)
+            if route=='ai':
+                topic = query.get('topic','a1')
+                intent = query.get('intent','entry_cohort')
+                asof = query.get('asof',insights.RULE_DATES[0])
+                if (set(query)-{'topic','intent','asof'} or intent not in insights.AGGREGATE_INTENTS
+                    or topic not in insights.SOURCES or asof not in insights.RULE_DATES):
+                    self.view_path = '/ai'
+                    return self.page('ai',ui.heading(self.lang,'privacy_denied'),400)
+                answer = insights.gateway(insights.RuleQuestion(topic,self.lang,asof))
+                aggregate = None
+                if role in ('judge','manager') and self.snapshot['source']=='synthetic':
+                    trend = self.monthly_trend(db,'manager','') if intent=='monthly_change' else ()
+                    cases = ()
+                    if intent!='monthly_change':
+                        _, approved_rows = data.get_snapshot(db,self.snapshot['id'])
+                        cases = rules.evaluate(self.snapshot,approved_rows)
+                    aggregate = insights.gateway(insights.AggregateQuestion(intent),self.snapshot['asof'],cases,trend)
+                return self.page(route,ui.assistant(self.lang,topic,answer,aggregate,intent,asof))
+            _,tables = data.get_snapshot(db,self.snapshot['id'])
             cases = rules.evaluate(self.snapshot,tables) if role!='importer' else []
             if role=='worker':
                 cases = [c for c in cases if c['worker']==auth['assignment']]
@@ -303,11 +321,6 @@ class Handler(BaseHTTPRequestHandler):
                 blob = xlsx.write(ui.export(self.lang,self.snapshot,cases,role))
                 return self.respond(200,blob,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                                     [('Content-Disposition','attachment; filename="cockpit.xlsx"')])
-            if route=='ai':
-                topic = query.get('topic','a1')
-                answer = insights.gateway(insights.RuleQuestion(topic,self.lang))
-                aggregate = insights.gateway(insights.AggregateQuestion('entry_cohort'),self.snapshot['asof'],cases) if role in ('judge','manager') and self.snapshot['source']=='synthetic' else None
-                return self.page(route,ui.assistant(self.lang,topic,answer,aggregate))
             if route=='forecast':
                 stored = db.execute('SELECT series FROM forecast_input WHERE username=?',(auth['username'],)).fetchone() if not self.server.hosted else None
                 series = json.loads(stored[0]) if stored else None
@@ -320,6 +333,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.intake(db,route,post,fields if post else {},files if post else [],tables,cases,digest(token))
             return self.respond(404)
         except (ValueError, OverflowError, BadZipFile, ParseError, KeyError, IndexError):
+            if path=='/ai':
+                self.view_path = '/ai'
             return self.page('review',ui.heading(self.lang,'review'),400)
         finally:
             db.close()

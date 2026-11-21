@@ -1,4 +1,5 @@
 from datetime import date
+from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -241,6 +242,29 @@ class InsightTests(TestCase):
             self.assertIn('pp. 1–2',answer['source'])
             self.assertIn('A1',answer['text'])
             self.assertEqual(answer['mode'],'retrieval_only')
+
+    def test_rule_source_chronology_authority_and_conflict(self):
+        default = insights.gateway(insights.RuleQuestion('scenario2027',1))
+        self.assertEqual(default['effective_from'],'2027-01-01')
+        self.assertTrue(default['upcoming'])
+        self.assertFalse(insights.gateway(insights.RuleQuestion('scenario2027',1,'2027-01-01'))['upcoming'])
+        self.assertIsNone(insights.gateway(insights.RuleQuestion('a1',1))['effective_from'])
+        source = next(r for r in insights.RULE_INDEX if r.topic=='a1')
+        competing = replace(source,answers=('Test A','Test B','Test C'),citation='Synthetic conflicting citation')
+        question = insights.RuleQuestion('a1',1)
+        self.assertEqual(insights.retrieve_rule(question,(source,competing))['mode'],'conflict')
+        weaker = replace(competing,authority=source.authority-1)
+        self.assertEqual(insights.retrieve_rule(question,(source,weaker))['text'],source.answers[1])
+        earlier = replace(question,asof='2025-01-01')
+        self.assertEqual(insights.retrieve_rule(earlier,(source,))['mode'],'insufficient')
+
+    def test_monthly_response_reuses_released_counts(self):
+        query = insights.AggregateQuestion('monthly_change')
+        snapshot = '2026-10-31'
+        rows = [('2026-09-30',96,37),('2026-10-31',96,39)]
+        self.assertEqual(insights.gateway(query,snapshot,trend=rows)['delta'],2)
+        hidden = [('2026-09-30',None,None),rows[1]]
+        self.assertEqual(insights.gateway(query,snapshot,trend=hidden)['mode'],'insufficient')
 
     def test_aggregate_suppression(self):
         cases = [{'entry':date(2024,1,1),'goals':[{'state':'achieved','deadline':date(2026,1,1)}]} for i in range(7)]

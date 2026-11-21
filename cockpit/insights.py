@@ -32,9 +32,34 @@ SOURCES = {
 }
 
 @dataclass(frozen=True)
+class RuleSource:
+    topic: str
+    version: str
+    available_from: date
+    effective_from: date | None
+    authority: int
+    owner: str
+    citation: str
+    context_url: str
+    section: str
+    answers: tuple[str,str,str]
+
+
+RULE_INDEX = tuple(
+    RuleSource(topic,'challenge-2026.11',date(2026,11,20),
+               date(2027,1,1) if topic=='scenario2027' else None,
+               100,'Stadt Bern ASD',citation,url,section,answers)
+    for topic,(url,section,citation,answers) in SOURCES.items()
+)
+RULE_DATES = ('2026-11-20','2027-01-01')
+AGGREGATE_INTENTS = ('entry_cohort','strongest_cohort','monthly_change')
+
+
+@dataclass(frozen=True)
 class RuleQuestion:
     topic: str
     language: int
+    asof: str = RULE_DATES[0]
 
 @dataclass(frozen=True)
 class AggregateQuestion:
@@ -47,18 +72,45 @@ class IntakeQuestion:
 CATEGORIES = ('schooling','course','scheduling','housing')
 LANGUAGES = (0,1,2)
 
-def gateway(request, snapshot=None, cases=()):
-    """Return only locally approved text or a suppressed fixed aggregate."""
-    if type(request) is RuleQuestion and request.topic in SOURCES and type(request.language) is int and request.language in LANGUAGES:
-        url, section, citation, answers = SOURCES[request.topic]
-        return {'text':answers[request.language],'source':citation,'section':section,'context_url':url,
-                'mode':'retrieval_only'}
-    if type(request) is AggregateQuestion and request.intent=='entry_cohort' and snapshot:
+
+def retrieve_rule(question,index=RULE_INDEX):
+    asof = date.fromisoformat(question.asof)
+    hits = [r for r in index if r.topic==question.topic and r.available_from<=asof]
+    if not hits:
+        return {'mode':'insufficient'}
+    current = max((r.authority,r.available_from) for r in hits)
+    top = [r for r in hits if (r.authority,r.available_from)==current]
+    if len({r.answers for r in top})>1:
+        return {'mode':'conflict','citations':tuple(r.citation for r in top)}
+    source = top[0]
+    return {'text':source.answers[question.language],'source':source.citation,'section':source.section,
+            'context_url':source.context_url,'mode':'retrieval_only','owner':source.owner,
+            'version':source.version,'available_from':source.available_from.isoformat(),
+            'effective_from':source.effective_from.isoformat() if source.effective_from else None,
+            'upcoming':bool(source.effective_from and asof<source.effective_from)}
+
+
+def gateway(request, snapshot=None, cases=(), trend=()):
+    """Release only allowlisted source excerpts or suppressed aggregate values."""
+    if (type(request) is RuleQuestion and request.topic in SOURCES and type(request.language) is int
+            and request.language in LANGUAGES and request.asof in RULE_DATES):
+        return retrieve_rule(request)
+    if type(request) is AggregateQuestion and request.intent in AGGREGATE_INTENTS and snapshot:
+        if request.intent=='monthly_change':
+            points = [(month,n,k) for month,n,k in trend if n and k is not None]
+            if len(points)!=2:
+                return {'mode':'insufficient','snapshot':snapshot}
+            return {'mode':'deterministic','snapshot':snapshot,'points':points,
+                    'delta':points[-1][2]-points[0][2],'window':'monthly_snapshots'}
         _,_,released = analysis(cases,date.fromisoformat(snapshot),'year')
         if not released:
             return {'mode':'insufficient','snapshot':snapshot}
-        y,n,_,k,_ = min(released,key=lambda x:x[3]/x[1])
-        return {'mode':'deterministic','year':y,'window':'completed_follow_up','denominator':n,'count':k,'snapshot':snapshot}
+        rank = max if request.intent=='strongest_cohort' else min
+        rate = rank(k/n for _,n,_,k,_ in released)
+        matching = [(y,n,k) for y,n,_,k,_ in released if k/n==rate]
+        y,n,k = matching[0]
+        return {'mode':'deterministic','year':y,'denominator':n,'count':k,'groups':matching,
+                'window':'completed_follow_up','snapshot':snapshot}
     if type(request) is IntakeQuestion and request.category in CATEGORIES:
         return {'mode':'local_classification','category':request.category,'approval_required':True}
     raise ValueError('privacy_policy_denied')

@@ -168,6 +168,29 @@ class HTTPTests(TestCase):
         finally:
             self.server.hosted = False
 
+    def test_assistant_rejects_canary_without_reflection_and_limits_aggregate_roles(self):
+        canary = b'PRIVATE-PHASE8-CANARY'
+        self.login('judging')
+        for param in ('q','topic','intent','asof'):
+            status, body = self.request('/ai?'+urlencode({param:canary.decode()}))
+            self.assertEqual(status,400)
+            self.assertNotIn(canary,body)
+        db = data.connect(self.path)
+        try:
+            self.assertFalse(any(canary.decode() in ' '.join(row) for row in db.execute('SELECT * FROM audit')))
+        finally:
+            db.close()
+        status, page = self.request('/ai?topic=scenario2027&intent=monthly_change')
+        self.assertEqual(status,200)
+        self.assertIn(b'2027-01-01',page)
+        self.assertIn(b'2026-09-30',page)
+        self.assertIn(b'+2',page)
+        self.cookies.clear()
+        self.login('worker')
+        status, page = self.request('/ai?intent=monthly_change')
+        self.assertEqual(status,200)
+        self.assertNotIn(b'+2',page)
+
     def test_three_languages_and_monthly_reimport(self):
         csrf=self.login('judging')
         for language,word in [('de-CH','Übersicht'),('en','Overview'),('fr-CH','Vue d’ensemble')]:

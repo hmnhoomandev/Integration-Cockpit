@@ -5,7 +5,7 @@ from itertools import chain
 
 from . import rules
 from .data import MONTHS, PHASE4_MONTH, PHASE5_MONTH
-from .insights import SOURCES, FSO
+from .insights import SOURCES, FSO, AGGREGATE_INTENTS, RULE_DATES
 
 LOCALES = ('de-CH','en','fr-CH')
 COPY = {
@@ -180,6 +180,22 @@ COPY = {
  'model_last':('Letzter Monatswert','Last observation','Dernière observation'),
  'model_seasonal':('Vorjahr','Seasonal baseline','Référence saisonnière'),
  'model_trend':('Linearer Trend','Linear trend','Tendance linéaire'),
+ 'privacy_denied':('Anfrage ausserhalb des erlaubten Schemas','Request outside the allowed schema','Requête hors schéma autorisé'),
+ 'authority':('Herausgeber','Issuing authority','Autorité émettrice'),
+ 'published':('Dokument verfügbar ab','Document available from','Document disponible dès le'),
+ 'effective':('Inkrafttreten laut Quelle','Effective date stated by source','Date d’effet indiquée par la source'),
+ 'date_unspecified':('In der Challenge nicht angegeben','Unspecified in the challenge','Non indiquée dans le défi'),
+ 'upcoming_rule':('Zum gewählten Datum liegt die Änderung in der Zukunft.','The change is still in the future on the selected date.','Le changement est futur à la date sélectionnée.'),
+ 'rule_conflict':('Gleichrangige Quellen widersprechen sich. Fachprüfung erforderlich.','Sources with equal authority disagree. Expert review is required.','Des sources de même autorité se contredisent. Vérification requise.'),
+ 'rule_insufficient':('Keine geprüfte Quelle für das gewählte Datum gefunden.','No reviewed source applies to this selection.','Aucune source vérifiée ne correspond à cette sélection.'),
+ 'context_link':('Öffentlicher Kontext','Public context','Contexte public'),
+ 'rule_date':('Quellenstichtag','Source lookup date','Date de consultation des sources'),
+ 'entry_cohort':('Niedrigste beobachtete Quote','Lowest observed rate','Taux observé le plus faible'),
+ 'strongest_cohort':('Höchste beobachtete Quote','Highest observed rate','Taux observé le plus élevé'),
+ 'monthly_change':('Was änderte sich zwischen den Monaten?','What changed between months?','Quel changement entre les mois ?'),
+ 'monthly_note':('Die Änderung folgt aus den Monatszählungen. Die Daten erklären keine Ursachen.','This difference comes from the monthly counts. The data do not establish causes.','L’écart provient des comptages mensuels. Les données ne permettent pas d’établir une cause.'),
+ 'local_release':('Freigabe bleibt in der Anwendung. Keine Modellanfrage.','The released fields stay in the application. No model request is made.','Les champs autorisés restent dans l’application. Aucun appel à un modèle.'),
+ 'aggregate_role':('Aggregierte Antworten für Leitung und Demo-Konto','Aggregate answers for management and the demo account','Réponses agrégées pour la direction et le compte de démonstration'),
  'missing_source':('Pflichtdatei fehlt','Required workbook is missing','Classeur obligatoire manquant'),
  'unrecognized_or_invalid_workbook':('Datei ungültig oder doppelt','Invalid or duplicate workbook','Classeur invalide ou en double'),
  'invalid_worksheet_data':('Ungültige Tabelleninhalte','Invalid worksheet content','Contenu de feuille invalide'),
@@ -293,7 +309,7 @@ def layout(lang,active,body,account=None,csrf='',snapshot=None,demo_switch=False
     nav = ''.join(f'<a href="/{key}" {"aria-current=page" if key==active or key=="queue" and active=="case" else ""}>{text(lang,key)}</a>' for key in menus) if account else ''
     target = urlsplit(view_path or '/'+active)
     parameters = parse_qs(target.query)
-    filters = {k:parameters[k][0] for k in ('q','state','page','goal','factor','topic') if k in parameters}
+    filters = {k:parameters[k][0] for k in ('q','state','page','goal','factor','topic','intent','asof') if k in parameters}
     language = ''.join(f'<a lang="{locale}" href="{href(f'/language/{locale}', view=target.path, **filters)}" {"aria-current=page" if i==lang else ""}>{locale[:2].upper()}</a>'
                        for i,locale in enumerate(LOCALES))
     date = f'<span class="snapshot">{text(lang,"snapshot")} <strong>{esc(snapshot["asof"])}</strong></span>' if snapshot else ''
@@ -502,16 +518,42 @@ def quality_export(lang,snapshot,diagnostic,issues,counts,manifest):
     }
 
 
-def assistant(lang,topic,result,aggregate):
-    topics = ''.join(f'<a class="chip" href="/ai?topic={k}" {"aria-current=page" if k==topic else ""}>{text(lang,k)}</a>' for k in SOURCES)
-    a = f'<strong>{aggregate["year"]}</strong> · {aggregate["count"]}/{aggregate["denominator"]} · {esc(aggregate["snapshot"])}' if aggregate and 'year' in aggregate else text(lang,'suppressed')
+def assistant(lang,topic,result,aggregate,intent='entry_cohort',asof=RULE_DATES[0]):
+    topics = ''.join(f'<a class="chip" href="{href("/ai",topic=k,intent=intent,asof=asof)}" {"aria-current=page" if k==topic else ""}>{text(lang,k)}</a>' for k in SOURCES)
+    dates = ''.join(f'<option {"selected" if d==asof else ""}>{esc(d)}</option>' for d in RULE_DATES)
+    date_picker = f'<form action="/ai"><input type="hidden" name="topic" value="{esc(topic)}"><input type="hidden" name="intent" value="{esc(intent)}"><label>{text(lang,"rule_date")} <select name="asof">{dates}</select></label>{action(lang,"choose")}</form>'
+    if result['mode']=='retrieval_only':
+        fields = [('authority',result['owner']),('policy',result['version']),('published',result['available_from']),
+                  ('effective',result['effective_from'] or tr(lang,'date_unspecified'))]
+        metadata = ''.join(f'<dt>{text(lang,k)}</dt><dd>{esc(v)}</dd>' for k,v in fields)
+        answer = f'<p>{esc(result["text"])}</p><p class="source">{esc(result["source"])} · <a href="{esc(result["context_url"])}">{text(lang,"context_link")} · {esc(result["section"])}</a></p><dl>{metadata}</dl>'
+        if result['upcoming']:
+            answer += f'<p>{text(lang,"upcoming_rule")}</p>'
+    elif result['mode']=='conflict':
+        answer = f'<p>{text(lang,"rule_conflict")}</p><p>{esc(" · ".join(result["citations"]))}</p>'
+    else:
+        answer = f'<p>{text(lang,"rule_insufficient")}</p>'
+    if aggregate is None:
+        aggregate_body = f'<p>{text(lang,"aggregate_role")}</p>'
+    else:
+        intents = ''.join(f'<a class="chip" href="{href("/ai",topic=topic,intent=k,asof=asof)}" {"aria-current=page" if k==intent else ""}>{text(lang,k)}</a>' for k in AGGREGATE_INTENTS)
+        if 'points' in aggregate:
+            points = table([tr(lang,'snapshot'),tr(lang,'scope_in'),tr(lang,'met')],
+                           ((esc(d),esc(n),esc(k)) for d,n,k in aggregate['points']))
+            presentation = f'<p>{text(lang,"difference_short")} · {aggregate["delta"]:+d}</p>{points}<p>{text(lang,"monthly_note")}</p>'
+        elif 'groups' in aggregate:
+            groups = table([tr(lang,'year'),tr(lang,'eligible'),tr(lang,'met')],
+                           ((esc(y),esc(n),esc(k)) for y,n,k in aggregate['groups']))
+            presentation = f'<p>{text(lang,"observation")} · {esc(aggregate["snapshot"])}</p>{groups}'
+        else:
+            presentation = f'<p>{text(lang,"suppressed")} · {esc(aggregate["snapshot"])}</p>'
+        aggregate_body = f'<div class="chips">{intents}</div>{presentation}<p>{text(lang,"group_note")}</p>'
     return heading(lang,'ai',text(lang,'retrieval'))+f'''
-<div class="chips">{topics}</div><section class="panel reading"><h2>{text(lang,topic)}</h2><p>{esc(result['text'])}</p>
-<p class="source">{esc(result['source'])} · <a href="{esc(result['context_url'])}">{esc(result['section'])}</a></p></section>
+<div class="chips">{topics}</div><section class="panel reading"><h2>{text(lang,topic)}</h2>{date_picker}{answer}</section>
 <div class="two"><section class="panel"><h2>{text(lang,'privacy')}</h2><dl>
 <dt>{text(lang,'before')}</dt><dd><code>DEMO-00001 · 08.04.1987 · A1</code></dd>
-<dt>{text(lang,'after')}</dt><dd><code>{{"topic": "{esc(topic)}", "locale": "{LOCALES[lang]}"}}</code></dd></dl></section>
-<section class="panel"><h2>{text(lang,'aggregate')}</h2><p>{a}</p><p>{text(lang,'group_note')}</p></section></div>'''
+<dt>{text(lang,'after')}</dt><dd><code>{{"topic": "{esc(topic)}", "locale": "{LOCALES[lang]}", "asof": "{esc(asof)}"}}</code></dd></dl><p>{text(lang,'local_release')}</p></section>
+<section class="panel"><h2>{text(lang,'explorer')}</h2>{aggregate_body}</section></div>'''
 
 
 def forecast(lang,report,tariffs,cases,series=None,can_upload=False,csrf='',candidate=None):
