@@ -90,9 +90,11 @@ def backtest(values=None):
     evaluation = range(split,len(values))
     def residuals(name, window):
         return [abs(values[i]-candidates[name](values[:i])) for i in window]
-    winner = min(candidates,key=lambda name:mean(residuals(name,validation)))
+    selected = min(candidates,key=lambda name:mean(residuals(name,validation)))
+    winner = selected
     scores = {name:round(mean(residuals(name,evaluation)),2) for name in candidates}
     baseline = min(('last','seasonal'),key=lambda name:mean(residuals(name,validation)))
+    gate_mae = {name:round(mean(residuals(name,gate)),2) for name in candidates}
     if mean(residuals(winner,gate))>=mean(residuals(baseline,gate)):
         winner = baseline
     errors = sorted(residuals(winner,validation))
@@ -100,7 +102,8 @@ def backtest(values=None):
     estimate = round(candidates[winner](values))
     return {'model':winner,'est':estimate,'lo':max(0,round(estimate-width)), 'hi':round(estimate+width),
             'mae':scores,'heldout':len(evaluation),'coverage':round(mean(e<=width for e in residuals(winner,evaluation)),2),
-            'horizon':1,'values':values}
+            'horizon':1,'values':values,'selected':selected,'baseline':baseline,'gate_mae':gate_mae,
+            'validation_months':len(validation),'gate_months':len(gate)}
 
 
 def read_aggregate_series(blob):

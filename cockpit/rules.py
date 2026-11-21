@@ -246,7 +246,53 @@ def a1_scope(status,born,start,end,active,entry,now):
     return 'scope_in'
 
 
-def evaluate(snapshot, rows):
+def zemis_reconcile(zemis, jobs, asof):
+    findings = []
+    for z in zemis:
+        begin = z.get('Arbeitsbeginn')
+        end = z.get('Verpflichtet bis') or asof
+        if begin and begin>asof:
+            continue
+        employer = (z.get('Betrieb') or '').casefold()
+        possible = [w for w in jobs if w.get('Von') and w['Von']<=min(end,asof)
+                    and (w.get('Bis') or asof)>=(begin or asof)]
+        rows = [w['_line'] for w in possible]
+        if not begin or (not possible and any(not w.get('Von') for w in jobs)):
+            reason = 'zemis_dates_unknown'
+        elif not possible:
+            reason = 'zemis_no_overlap'
+        elif employer and any((w.get('Arbeitgeber Name') or '').casefold()==employer for w in possible):
+            continue
+        else:
+            reason = 'zemis_employer_unknown'
+        findings.append((z['_line'],reason,rows))
+    return findings
+
+
+def payments(cases):
+    outcomes = [defaultdict(list) for _ in range(3)]
+    for case in cases:
+        for i,goal in enumerate(case['goals']):
+            if goal['state']!='na':
+                outcomes[i][case['home'] if i==2 else case['id']].append(goal)
+    summary = []
+    for group in outcomes:
+        verified = unpaid = review = 0
+        for goals in group.values():
+            first = goals[0]
+            if first['state']=='achieved':
+                dates = {d for g in goals for d in g.get('official_dates',())}
+                if dates=={first['achieved']} and not any(g.get('official_undated') for g in goals):
+                    verified += 1
+                else:
+                    unpaid += 1
+            elif first['state']=='review':
+                review += 1
+        summary.append((verified,unpaid,review))
+    return summary
+
+
+def evaluate(snapshot, rows, candidate=False):
     now = date.fromisoformat(snapshot['asof'])
     indexes = defaultdict(lambda:defaultdict(list))
     household = defaultdict(lambda:defaultdict(list))
@@ -257,8 +303,17 @@ def evaluate(snapshot, rows):
                 indexes[row['_person']][table].append(row)
             if row.get('Dossier-Nr.'):
                 household[row['Dossier-Nr.']][table].append(row)
+    cutoffs = {}
     for person in rows.get('clients',[]):
-        ends[person['Dossier-Nr.']].add(person.get('Zuständigkeitsende'))
+        pid = person['_person']
+        tables = indexes[pid]
+        entries = {as_date(r.get('Ereignisdatum')) for r in tables['events'] if r.get('Asylgeschäftsart')=='Aufenthalt (Einreise)'}
+        entry = next(iter(entries)) if len(entries)==1 else None
+        reference, transition = reference_ends(person.get('Verfahrensstand'),entry,tables['events'])
+        exported = as_date(person.get('Zuständigkeitsende'))
+        effective = transition if candidate and transition is not None and exported is not None else exported
+        ends[person['Dossier-Nr.']].add(effective)
+        cutoffs[pid] = entry,reference,transition,effective
     houses = {}
     cases = []
     for person in rows.get('clients',[]):
@@ -271,15 +326,14 @@ def evaluate(snapshot, rows):
         status = person.get('Verfahrensstand')
         active = {r.get('Verfahrensstand') for r in tables['status'] if r.get('Verfahrensstand Gültig ab')
                 and r['Verfahrensstand Gültig ab']<=snapshot['asof']<= (r.get('Verfahrensstand Gültig bis') or '9999')}
-        entries = {as_date(r.get('Ereignisdatum')) for r in tables['events'] if r.get('Asylgeschäftsart')=='Aufenthalt (Einreise)'}
-        entry = next(iter(entries)) if len(entries)==1 else None
+        entry,reference_end,transition_end,effective_end = cutoffs[pid]
         age = age_on(born,now)
         if status in OUT or (age is not None and age<16) or (start and start>now) or (end and end<now):
             employment=result('na','outside_scope')
         elif status not in ELIGIBLE or not born or not start or (active and active!={status}):
             employment=result('review','scope_unknown')
         else:
-            employment = goal2(tables,now,start,end,snapshot['source']=='synthetic')
+            employment = goal2(tables,now,start,effective_end,snapshot['source']=='synthetic')
         scope = a1_scope(status,born,start,end,active,entry,now)
         if scope=='scope_out':
             language = result('na','outside_scope') | {'scope':scope}
@@ -291,20 +345,15 @@ def evaluate(snapshot, rows):
             language = goal1(person,entry,now,tables)
         if home not in houses:
             family = household[home]
-            cutoff = as_date(next(iter(ends[home]))) if len(ends[home])==1 else None
+            cutoff = next(iter(ends[home])) if len(ends[home])==1 else None
             houses[home] = goal3(home,family['membership'],family['support'],cutoff,now,snapshot['source']=='synthetic')
         financial = houses[home] if employment['state']!='na' else result('na','outside_scope')
         employment = recorded(employment,tables['official'],WORK_GOAL,now) if employment['state']!='na' else employment
         financial = recorded(financial,tables['official'],HOUSEHOLD_GOAL,now) if financial['state']!='na' else financial
-        reference_end, transition_end = reference_ends(status,entry,tables['events'])
-        gaps = []
-        for z in tables['zemis']:
-            a = z.get('Arbeitsbeginn')
-            b = z.get('Verpflichtet bis') or '9999'
-            if a and a<=snapshot['asof'] and not any(w.get('Von') and w['Von']<=b and (w.get('Bis') or '9999')>=a for w in tables['work']):
-                gaps.append(z['_line'])
+        findings = zemis_reconcile(tables['zemis'],tables['work'],snapshot['asof'])
+        gaps = [line for line,_,_ in findings]
         cases.append(dict(id=pid,worker=person.get('Fallführung') or '–',home=home,entry=entry,age=age,
-            status=status,school_years=person.get('Schuljahre vor Einreise'),mother_tongue=person.get('Muttersprache'),goals=(language,employment,financial),tables=tables,gaps=gaps,end=end,
+            status=status,school_years=person.get('Schuljahre vor Einreise'),mother_tongue=person.get('Muttersprache'),goals=(language,employment,financial),tables=tables,gaps=gaps,zemis_findings=findings,end=end,effective_end=effective_end,
             reference_end=reference_end,transition_end=transition_end))
     return cases
 

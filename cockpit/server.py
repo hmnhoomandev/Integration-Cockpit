@@ -312,8 +312,10 @@ class Handler(BaseHTTPRequestHandler):
                 stored = db.execute('SELECT series FROM forecast_input WHERE username=?',(auth['username'],)).fetchone() if not self.server.hosted else None
                 series = json.loads(stored[0]) if stored else None
                 report = insights.backtest([r[1] for r in series] if series else None)
-                return self.page(route,ui.forecast(self.lang,report,min(100000,max(0,int(query.get('rate','0')))),cases,
-                                                   series,not self.server.hosted,self.csrf))
+                candidate = rules.evaluate(self.snapshot,tables,candidate=True) if self.snapshot['source']=='synthetic' else None
+                rates = [min(100000,max(0,int(query.get('rate_'+key,'0')))) for key in ('a1','work','household')]
+                return self.page(route,ui.forecast(self.lang,report,rates,cases,series,not self.server.hosted,
+                                                   self.csrf,candidate))
             if route in ('intake','intake-save','intake-demo'):
                 return self.intake(db,route,post,fields if post else {},files if post else [],tables,cases,digest(token))
             return self.respond(404)

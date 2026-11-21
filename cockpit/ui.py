@@ -154,6 +154,32 @@ COPY = {
  'ci_upper':('95%-KI Obergrenze','95% CI upper','Borne supérieure IC 95 %'),
  'confidence_interval':('95%-Konfidenzintervall','95% confidence interval','Intervalle de confiance à 95 %'),
  'case_identifier':('Fallkennung','Case ID','Identifiant du dossier'),
+ 'difference_short':('Differenz','Difference','Écart'),
+ 'baseline':('Basis','Baseline','Référence'),
+ 'candidate':('Szenario','Scenario','Scénario'),
+ 'verified_attainment':('Fristgerecht und bestätigt','On time and corroborated','Dans les délais et corroboré'),
+ 'uncorroborated':('Fristgerecht ohne Bestätigung','On time without corroboration','Dans les délais sans corroboration'),
+ 'scenario_note':('Unverbindlicher Vergleich mit exportierter Frist. Keine Änderung am Import.','Illustrative comparison against the exported cutoff. The snapshot stays intact.','Comparaison indicative avec l’échéance exportée. L’instantané reste intact.'),
+ 'payment_title':('Illustrative Abgeltung','Illustrative payments','Paiements indicatifs'),
+ 'payment_note':('Nur übereinstimmende Nachweise und offizielle Datumsangaben werden bepreist. Tarife sind Annahmen.','Only matching evidence and official dates are priced. Rates are assumptions.','Seules les preuves et dates officielles concordantes sont chiffrées. Les tarifs sont hypothétiques.'),
+ 'rate_chf':('Ansatz in CHF','Rate in CHF','Tarif en CHF'),
+ 'amount_chf':('Betrag in CHF','Amount in CHF','Montant en CHF'),
+ 'due_soon':('Frist in den nächsten 30 Tagen','Due in the next 30 days','Échéance dans les 30 jours'),
+ 'unassigned':('Nicht zugewiesen','Unassigned','Non attribué'),
+ 'zemis_dates_unknown':('Beschäftigungsdaten ungeklärt','Employment dates need review','Dates d’emploi à vérifier'),
+ 'zemis_no_overlap':('Kein zeitlich passender Erwerbseintrag','No overlapping employment entry','Aucun emploi sur la même période'),
+ 'zemis_employer_unknown':('Arbeitgeber nicht sicher abgeglichen','Employer match unconfirmed','Correspondance employeur non confirmée'),
+ 'month':('Monat','Month','Mois'),
+ 'count':('Anzahl','Count','Nombre'),
+ 'validation_months':('Modellauswahl (Monate)','Model selection (months)','Sélection du modèle (mois)'),
+ 'gate_months':('Validierungsschranke (Monate)','Validation gate (months)','Seuil de validation (mois)'),
+ 'gate_error':('Validierungsschranke · MAE','Validation gate · MAE','Seuil de validation · MAE'),
+ 'heldout_error':('Separater Test · MAE','Held-out test · MAE','Test séparé · MAE'),
+ 'horizon':('Prognosehorizont','Forecast horizon','Horizon de prévision'),
+ 'interval_coverage':('Intervallabdeckung im Test','Held-out interval coverage','Couverture de l’intervalle en test'),
+ 'model_last':('Letzter Monatswert','Last observation','Dernière observation'),
+ 'model_seasonal':('Vorjahr','Seasonal baseline','Référence saisonnière'),
+ 'model_trend':('Linearer Trend','Linear trend','Tendance linéaire'),
  'missing_source':('Pflichtdatei fehlt','Required workbook is missing','Classeur obligatoire manquant'),
  'unrecognized_or_invalid_workbook':('Datei ungültig oder doppelt','Invalid or duplicate workbook','Classeur invalide ou en double'),
  'invalid_worksheet_data':('Ungültige Tabelleninhalte','Invalid worksheet content','Contenu de feuille invalide'),
@@ -320,9 +346,19 @@ def overview(lang,snapshot,cases,management,dimension='year',intake_categories=N
         workers = {}
         for c in cases:
             workers.setdefault(c['worker'],[]).append(c)
-        caseload = table([tr(lang,'worker'),tr(lang,'people'),tr(lang,'follow'),tr(lang,'quality')],
-          ((esc(k),esc(len(items)),esc(sum(c['goals'][0]['state'] in ('risk','review','overdue') for c in items)),
-          esc(sum(bool(c['gaps']) for c in items))) for k,items in sorted(workers.items()) if len(items)>=rules.MIN_GROUP))
+        now = date.fromisoformat(snapshot['asof'])
+        def workload(items):
+            due = sum(any(g['deadline'] and 0<=(g['deadline']-now).days<=30 and
+                          g['state'] in ('ontrack','risk','review') for g in c['goals']) for c in items)
+            review = sum(any(g['state']=='review' for g in c['goals']) for c in items)
+            return len(items),len({c['home'] for c in items}),due,review,sum(bool(c['gaps']) for c in items)
+        workers.setdefault('–',[])
+        workload_rows = []
+        for key,items in sorted(workers.items()):
+            if len(items)>=rules.MIN_GROUP or key=='–':
+                values = (text(lang,'suppressed'),)*5 if 0<len(items)<rules.MIN_GROUP else tuple(esc(n) for n in workload(items))
+                workload_rows.append((text(lang,'unassigned') if key=='–' else esc(key),*values))
+        caseload = table([tr(lang,k) for k in ('worker','people','homes','due_soon','review','quality')],workload_rows)
         factor_panel = f'<section class="panel"><h2>{text(lang,"explorer")}</h2><p>{window} · {esc(snapshot["asof"])} · {text(lang,"upcoming_due")} {upcoming} · {text(lang,"missing")} {missing}</p><div class="chips">{goal_choices}</div><div class="chips">{choices}</div>{rendered}<p>{text(lang,"analysis_note")}</p><p>{text(lang,"source_limit")}</p><a class="button" href="{aggregates}">{text(lang,"safe_aggregates")}</a></section><section class="panel"><h2>{text(lang,"caseload")}</h2>{caseload}<p>{text(lang,"quality_note")}</p></section>'
     import json
     sources = json.loads(snapshot['inspected'])
@@ -406,7 +442,13 @@ def detail(lang,case):
             timeline.append((record.get(start) or '',record.get(end),label,record.get(fact)))
     rows = table([tr(lang,'source'),tr(lang,'category'),tr(lang,'deadline'),tr(lang,'date_until')],
         ((text(lang,label),esc(value),esc(a),esc(b)) for a,b,label,value in sorted(timeline,key=lambda row:row[0],reverse=True)))
-    return heading(lang,'case',esc(case['id']))+f'<a class="chip back-link" href="/queue">{text(lang,"back_queue")}</a><div class="three">'+''.join(sections)+f'</div><section class="panel"><h2>{text(lang,"timeline")}</h2>{rows}</section>'
+    quality = ''
+    if case['zemis_findings']:
+        findings = table(['ZEMIS',tr(lang,'result'),tr(lang,'evidence')],
+                         ((esc(line),text(lang,reason),esc(', '.join(map(str,rows))))
+                          for line,reason,rows in case['zemis_findings']))
+        quality = f'<section class="panel"><h2>{text(lang,"quality")}</h2>{findings}</section>'
+    return heading(lang,'case',esc(case['id']))+f'<a class="chip back-link" href="/queue">{text(lang,"back_queue")}</a><div class="three">'+''.join(sections)+f'</div><section class="panel"><h2>{text(lang,"timeline")}</h2>{rows}</section>{quality}'
 
 
 
@@ -472,18 +514,36 @@ def assistant(lang,topic,result,aggregate):
 <section class="panel"><h2>{text(lang,'aggregate')}</h2><p>{a}</p><p>{text(lang,'group_note')}</p></section></div>'''
 
 
-def forecast(lang,report,tariff,cases,series=None,can_upload=False,csrf=''):
+def forecast(lang,report,tariffs,cases,series=None,can_upload=False,csrf='',candidate=None):
     values = report['values']
     top = max(values+[report['hi']])
     bars = ''.join(f'<meter min="0" max="{top}" value="{v}" aria-label="{i+1}: {v}">{v}</meter>'
                    for i,v in enumerate(values[-24:],len(values)-23))
-    cohort = [case for case in cases if case['status'] in ('VA','F-FL') and case['entry'] and case['end']]
-    changed = sum(bool(c['transition_end'] and c['transition_end']!=c['end']) for c in cohort)
-    met = sum(c['goals'][0]['state']=='achieved' for c in cases)
-    checks = table(['Model','MAE'],((esc(k),esc(v)) for k,v in report['mae'].items()))
-    status = f'{esc(report["model"])} · {text(lang,"heldout")} {report["heldout"]} · {report["coverage"]:.0%}'
-    raw_values = ', '.join(map(str,values))
-    series_meta = f'{esc(series[0][0])} → {esc(series[-1][0])} · {len(series)}' if series else '2022-01 → 2025-12 · 48 · seed 2026 · SYN'
+    from datetime import date
+    dates = [row[0] for row in series] if series else [rules.months(date(2022,1,1),i).strftime('%Y-%m') for i in range(len(values))]
+    observations = table([tr(lang,'month'),tr(lang,'count')],((esc(month),esc(v)) for month,v in zip(dates,values)))
+    forecast_month = rules.months(date.fromisoformat(dates[-1]+'-01'),report['horizon']).strftime('%Y-%m')
+    checks = table([tr(lang,'forecast'),tr(lang,'gate_error'),tr(lang,'heldout_error')],
+                   ((text(lang,'model_'+k),esc(report['gate_mae'][k]),esc(v)) for k,v in report['mae'].items()))
+    status = f'{text(lang,"model_"+report["model"])} · {text(lang,"heldout")} {report["heldout"]} · {text(lang,"interval_coverage")} {report["coverage"]:.0%}'
+    series_meta = f'{esc(dates[0])} → {esc(dates[-1])} · {len(values)} · '+text(lang,'aggregate_local' if series else 'demo')
+    scenario = ''
+    if candidate is not None:
+        changed = sum(a['end']!=b['effective_end'] for a,b in zip(cases,candidate,strict=True))
+        scenario_rows = []
+        for i,key in enumerate(('a1','work','household')):
+            baseline,before = rules.counts(cases,i),rules.counts(candidate,i)
+            for state in ('achieved','review','overdue','ontrack','risk'):
+                a,b = baseline[state],before[state]
+                scenario_rows.append((text(lang,key),text(lang,'met' if state=='achieved' and i==0 else state),esc(a),esc(b),f'{b-a:+d}'))
+        comparison = table([tr(lang,k) for k in ('goals','result','baseline','candidate','difference_short')],scenario_rows)
+        payment_rows = []
+        for key,tariff,(verified,unconfirmed,review) in zip(('a1','work','household'),tariffs,rules.payments(cases),strict=True):
+            payment_rows.append((text(lang,key),esc(verified),esc(unconfirmed),esc(review),
+                                 f'<input type="number" aria-label="{text(lang,key)} · {text(lang,"rate_chf")}" name="rate_{key}" min="0" max="100000" value="{tariff}">',
+                                 f'CHF {verified*tariff:,}'))
+        pricing = table([tr(lang,k) for k in ('goals','verified_attainment','uncorroborated','review','rate_chf','amount_chf')],payment_rows)
+        scenario = f'<section class="panel"><h2>{text(lang,"scenario2027")}</h2><p>VA / F-FL · {esc(rules.RESPONSIBILITY_POLICY["version"])} · {changed}/{len(cases)}</p><p>{text(lang,"scenario_note")}</p>{comparison}</section><section class="panel"><h2>{text(lang,"payment_title")}</h2><p>{text(lang,"payment_note")}</p><form class="pricing" action="/forecast">{pricing}{action(lang,"choose")}</form></section>'
     controls = ''
     if can_upload:
         controls = '<section class="panel"><p>'+text(lang,'aggregate_help')+'</p>'+post('/forecast-upload',csrf,
@@ -494,12 +554,9 @@ def forecast(lang,report,tariff,cases,series=None,can_upload=False,csrf=''):
     return heading(lang,'forecast',text(lang,'aggregate_local' if series else 'model'))+f'''
 <div class="two"><section class="panel reading"><h2>{text(lang,'interval')}</h2><strong class="forecast-value">{report['est']} <small>{report['lo']}–{report['hi']}</small></strong>
 <p>{status}</p><div class="series" aria-hidden="true">{bars}</div><details><summary>{text(lang,'data_card')}</summary>
-<p>{series_meta}</p><p class="mono">{raw_values}</p></details></section>
-<section class="panel"><h2>MAE</h2>{checks}</section></div>
-<div class="two"><section class="panel"><h2>{text(lang,'public')}</h2><p>{text(lang,'public_note')}</p><a href="{FSO}">{text(lang,'source')} · BFS / FSO</a></section>
-<section class="panel"><h2>{text(lang,'scenario2027')}</h2><p>VA / F-FL · {rules.RESPONSIBILITY_POLICY['transition_entry_months']} M · {changed}/{len(cohort)}</p>
-<form action="/forecast"><label>{text(lang,'tariff')} <input type="number" name="rate" min="0" max="100000" value="{tariff}"></label>{action(lang,'choose')}</form>
-<p>{met} × CHF {tariff:,} = <strong>CHF {met*tariff:,}</strong></p></section></div>{controls}'''
+<p>{series_meta}</p>{observations}</details><p>{text(lang,'horizon')} · {forecast_month}</p></section>
+<section class="panel"><h2>MAE</h2><p>{text(lang,'validation_months')} · {report['validation_months']}<br>{text(lang,'gate_months')} · {report['gate_months']}</p>{checks}</section></div>
+<section class="panel"><h2>{text(lang,'public')}</h2><p>{text(lang,'public_note')}</p><a href="{FSO}">{text(lang,'source')} · BFS / FSO</a></section>{scenario}{controls}'''
 
 
 def login(lang,csrf,error=''):
@@ -564,6 +621,8 @@ def export(lang,snapshot,cases,role):
             tabs[tr(lang,label)] = [[tr(lang,label),*(tr(lang,k) for k in rules.A1_TOTALS)]] + [
                 [key,*rules.a1_totals(items)] for key,items in sorted(groups.items())]
         tabs[tr(lang,'control_totals')] = [[tr(lang,k) for k in rules.A1_TOTALS],rules.a1_totals(cases)]
-        tabs['ZEMIS'] = [['ID',tr(lang,'evidence')]] + [[case['id'],','.join(map(str,case['gaps']))] for case in cases if case['gaps']]
+        tabs['ZEMIS'] = [[tr(lang,'case_identifier'),'ZEMIS',tr(lang,'result'),tr(lang,'evidence')]] + [
+            [case['id'],line,tr(lang,reason),','.join(map(str,workbook_rows))]
+            for case in cases for line,reason,workbook_rows in case['zemis_findings']]
     tabs[tr(lang,'coverage')] = coverage
     return tabs

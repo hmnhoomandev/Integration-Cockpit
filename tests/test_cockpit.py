@@ -83,6 +83,20 @@ class SnapshotTests(TestCase):
         with ZipFile(BytesIO(xlsx.write(ui.export(0,snap,cases,'manager')))) as workbook:
             self.assertFalse(any(b'DEMO-00001' in workbook.read(name) for name in workbook.namelist()))
 
+    def test_scenario_does_not_mutate_baseline_and_payments_are_corroborated(self):
+        snap,rows = data.get_snapshot(self.db,self.second)
+        baseline = rules.evaluate(snap,rows)
+        trial = rules.evaluate(snap,rows,candidate=True)
+        self.assertEqual(baseline[0]['goals'][0],trial[0]['goals'][0])
+        self.assertEqual(baseline[0]['goals'][1]['deadline'],date(2028,6,30))
+        self.assertEqual(trial[0]['goals'][1]['deadline'],date(2028,10,16))
+        self.assertEqual(trial[0]['goals'][2]['state'],'review')
+        verified,unconfirmed,_ = rules.payments(baseline)[0]
+        self.assertGreater(verified,0)
+        self.assertGreater(unconfirmed,0)
+        self.assertEqual(verified+unconfirmed,rules.counts(baseline,0)['achieved'])
+        self.assertEqual(rules.evaluate(snap,rows),baseline)
+
     def test_a1_totals_reconcile_by_worker_and_entry_year(self):
         snap, rows = data.get_snapshot(self.db,self.second)
         cases = rules.evaluate(snap,rows)
@@ -202,6 +216,15 @@ class RulesTests(TestCase):
         self.assertEqual((goal['period_start'],goal['earliest']),(date(2026,7,1),date(2027,7,1)))
         self.assertEqual(rules.goal3('demo',members,[],None,now,True)['reason'],'household_end_unknown')
         self.assertEqual(rules.goal3('demo',members,[],end,now,False)['state'],'review')
+
+    def test_zemis_distinguishes_no_overlap_from_unverified_employer_or_dates(self):
+        fed = {'Arbeitsbeginn':'2026-01-01','Verpflichtet bis':'2026-03-01','Betrieb':'Demo','_line':2}
+        job = {'Von':'2026-02-01','Arbeitgeber Name':'demo','_line':5}
+        asof = '2026-10-31'
+        self.assertEqual(rules.zemis_reconcile([fed],[job],asof),[])
+        self.assertEqual(rules.zemis_reconcile([fed],[],asof),[(2,'zemis_no_overlap',[])])
+        self.assertEqual(rules.zemis_reconcile([fed],[job|{'Von':None}],asof),[(2,'zemis_dates_unknown',[])])
+        self.assertEqual(rules.zemis_reconcile([fed],[job|{'Arbeitgeber Name':'other'}],asof),[(2,'zemis_employer_unknown',[5])])
 
     def test_literal_excel_cells(self):
         book = xlsx.write({'test':[['Code'],['=HYPERLINK("secret")'],['0004']]})
